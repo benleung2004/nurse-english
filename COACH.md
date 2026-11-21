@@ -26,8 +26,10 @@ mkdir -p logs && gh api repos/benleung2004/nurse-english-data/contents/data/prog
    - `gram`：文法 `g`（`NE.grammar` index）、`cat`、`ok`、`a` 揀咗咩
    - `para`：改寫 `a` 佢寫咗咩、`self` 自評
    - `ai`：Gemini 評分 `kind` essay/speak/para/say、`input` 佢原文（口語係語音轉文字）、`band`／`score`、`res` 完整回覆（改正、建議）。**睇佢嘅口語同寫作原文就喺呢度**，可以核對 AI 評分合唔合理
-4. `drafts`：IELTS 作文全文（`text`、`done` 完成日期）→ 可以按 IELTS 四項準則批改，估 band，列出常犯文法錯誤。
-5. `log`（每日 n 新字／r 溫習／qt 測驗題數／q 答啱／ex 口語寫作分、`goalHit`）、`cards`（每張卡 SRS：`i` 間隔日數、`l` 唔記得次數、`due`）、`settings`、`custom`（佢自己加嘅生字 = 工作上遇到嘅字，好有參考價值）。
+   - `mock`：佢記低嘅模擬考分數 `L`/`R`/`W`/`S`（band）同備註 `n`
+4. `mocks`（Cambridge 模擬考分數列表，睇進度）、`roadmap`（備考路線圖已剔嘅項目：`<階段>:<項目>` 或每週項目 `<階段>:<項目>@<星期一日期>` = 完成日期）。路線圖內容喺 `js/data/roadmap.js`，可以按佢進度調整。
+5. `drafts`：IELTS 作文全文（`text`、`done` 完成日期）→ 可以按 IELTS 四項準則批改，估 band，列出常犯文法錯誤。
+6. `log`（每日 n 新字／r 溫習／qt 測驗題數／q 答啱／ex 口語寫作分、`goalHit`）、`cards`（每張卡 SRS：`i` 間隔日數、`l` 唔記得次數、`due`）、`settings`、`custom`（佢自己加嘅生字 = 工作上遇到嘅字，好有參考價值）。
 
 ## 3. 分析報告（繁體中文，香港口語，簡短）
 - 學習習慣：活躍日數、連續日數、每日幾點學、有冇達標

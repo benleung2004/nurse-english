@@ -44,7 +44,7 @@
     return {
       settings: Object.assign({}, DEFAULTS, d.settings), cards: d.cards || {}, log: d.log || {},
       custom: d.custom || [], stars: d.stars || {}, drafts: d.drafts || {}, counters: Object.assign({ speak: 0, essay: 0 }, d.counters),
-      events: d.events || [], feedback: d.feedback || []
+      events: d.events || [], feedback: d.feedback || [], roadmap: d.roadmap || {}, mocks: d.mocks || []
     };
   }
   let S = load();
@@ -152,7 +152,8 @@
     return {
       app: 'nurse-english', exportedAt: new Date().toISOString(), contentVersion: NE.cards.length,
       summary: insights(30), settings: S.settings, counters: S.counters, feedback: S.feedback,
-      log: S.log, cards: S.cards, stars: S.stars, custom: S.custom, drafts: S.drafts, events: S.events
+      log: S.log, cards: S.cards, stars: S.stars, custom: S.custom, drafts: S.drafts, events: S.events,
+      roadmap: S.roadmap, mocks: S.mocks
     };
   }
   function logToday() { const t = today(); return S.log[t] || (S.log[t] = { n: 0, r: 0, q: 0, qt: 0, ex: 0 }); }
@@ -1230,9 +1231,56 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     };
     return `<div class="card" style="border-left:5px solid #3b82f6">
       <div class="row between"><b>🗓️ 今日任務</b>${days != null ? `<span class="pill" style="background:var(--grad);color:#fff">${days > 0 ? 'IELTS 倒數 ' + days + ' 日' : days === 0 ? '今日考試！加油 💪' : '考完喇 🎉'}</span>` : `<a class="small" href="#settings">設定考試日期 →</a>`}</div>
-      <div class="small muted">目標 Band ${esc(s.target)} · ${s.examType === 'gt' ? 'General Training' : 'Academic'}</div>
+      <div class="row between small"><span class="muted">目標 Band ${esc(s.target)} · ${s.examType === 'gt' ? 'General Training' : 'Academic'}</span><a href="#plan"><b>🗺️ 備考路線圖 →</b></a></div>
       ${tasks.map(row).join('')}</div>`;
   }
+
+  // ===== 備考路線圖 =====
+  function weekKey() { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return fmt(d); } // 星期一開始
+  function rmKey(ph, it) { return ph.type === 'weekly' ? `${ph.id}:${it.id}@${weekKey()}` : `${ph.id}:${it.id}`; }
+  function rmNow() {
+    const s = S.settings; if (!s.examDate) return 'prep';
+    const days = Math.round((new Date(s.examDate) - new Date(today())) / 864e5);
+    if (days < 0) return null; if (days === 0) return 'day'; if (days <= 14) return 'final';
+    const diag = NE.roadmap.find(p => p.id === 'diag');
+    if (diag && diag.items.some(it => !S.roadmap[rmKey(diag, it)])) return 'diag';
+    return days <= 42 ? 'mock' : 'skills';
+  }
+  V.plan = () => {
+    const now = rmNow(); const s = S.settings;
+    const days = s.examDate ? Math.round((new Date(s.examDate) - new Date(today())) / 864e5) : null;
+    const once = NE.roadmap.filter(p => p.type === 'once'); let all = 0, done = 0;
+    once.forEach(p => p.items.forEach(it => { all++; if (S.roadmap[rmKey(p, it)]) done++; }));
+    const itemBtn = (p, it) => {
+      const on = !!S.roadmap[rmKey(p, it)];
+      const go = it.link ? `<a class="chip btn" href="${esc(it.link)}" target="_blank" rel="noopener">開 ↗</a>`
+        : it.go ? (it.go[0] === '#' ? `<a class="chip btn" href="${esc(it.go)}">去 ›</a>` : `<button class="chip" data-act="goIelts" data-tab="${esc(it.go)}">去 ›</button>`) : '';
+      return `<div class="row" style="flex-wrap:nowrap;align-items:flex-start;margin-top:8px">
+        <button class="btn-ghost grow" style="justify-content:flex-start;text-align:left;min-height:44px;${on ? 'opacity:.6' : ''}" data-act="rmTick" data-k="${esc(rmKey(p, it))}">${on ? '✅' : '⬜'} <span style="margin-left:6px;${on ? 'text-decoration:line-through' : ''}">${esc(it.t)}</span></button>${go}</div>`;
+    };
+    const phase = p => {
+      const n = p.items.filter(it => S.roadmap[rmKey(p, it)]).length; const cur = p.id === now;
+      return `<details class="card" ${cur ? 'open' : ''} style="${cur ? 'border:2px solid #8b5cf6' : ''}">
+        <summary><b>${p.icon} ${esc(p.title)}</b> ${cur ? '<span class="pill" style="background:var(--grad);color:#fff">而家做呢個</span>' : ''}
+        <span class="small muted" style="float:right">${n}/${p.items.length}${p.type === 'weekly' ? ' 本星期' : ''}</span></summary>
+        <p class="small muted" style="margin-top:6px">⏰ ${esc(p.when)}${p.type === 'weekly' ? ' · 每星期一重新開始' : ''}<br>💡 ${esc(p.tip)}</p>
+        ${p.items.map(it => itemBtn(p, it)).join('')}</details>`;
+    };
+    const band = v => { const n = parseFloat(v); return isNaN(n) ? '–' : n; };
+    const mocks = S.mocks.slice().reverse();
+    return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#home">‹</a><h1 class="grow">🗺️ 備考路線圖</h1></div>
+      <div class="card hero center"><div class="small">${days == null ? '未設定考試日期' : days > 0 ? `IELTS 倒數 <b>${days}</b> 日` : days === 0 ? '今日考試！加油 💪' : '考完喇 🎉'} · 目標 Band ${esc(s.target)}</div>
+        <div class="progress" style="margin-top:10px"><div style="width:${all ? done / all * 100 : 0}%"></div></div>
+        <div class="small" style="margin-top:6px">一次性任務完成 ${done}/${all}${days == null ? ' · <a href="#settings" style="color:inherit"><b>設定考試日期 →</b></a>' : ''}</div></div>
+      <p class="small muted">大約 10–12 星期：App 每日練 ＋ Cambridge 真題。做完撳一下就剔，再撳取消。</p>
+      ${NE.roadmap.map(phase).join('')}
+      <div class="card"><h3>📊 模擬考分數</h3><p class="small muted">每次做完 Cambridge 真題記低，睇下有冇進步（填 band，例如 6 或 6.5；冇做嗰項留空）。</p>
+        <div class="grid2" style="grid-template-columns:repeat(4,1fr);gap:6px">${['L 聽力', 'R 閱讀', 'W 寫作', 'S 口語'].map(x => `<input id="mk${x[0]}" inputmode="decimal" placeholder="${x}" style="min-width:0">`).join('')}</div>
+        <input id="mkN" placeholder="備註（例如：Cambridge 18 Test 2）" style="margin-top:6px">
+        <button class="btn-primary btn-block" style="margin-top:8px" data-act="mkAdd">記低</button>
+        ${mocks.length ? `<table style="width:100%;margin-top:10px;font-size:14px;text-align:center"><tr><th>日期</th><th>L</th><th>R</th><th>W</th><th>S</th></tr>
+          ${mocks.map(m => `<tr><td>${esc(m.d.slice(5))}</td><td>${band(m.L)}</td><td>${band(m.R)}</td><td>${band(m.W)}</td><td>${band(m.S)}</td></tr>${m.n ? `<tr><td colspan="5" class="small muted" style="text-align:left">${esc(m.n)}</td></tr>` : ''}`).join('')}</table>` : ''}</div>`;
+  };
 
   // ===== 使用說明 =====
   V.help = () => {
@@ -1269,6 +1317,10 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 💡 <b>貼士</b>：評分準則、溫習方法、官方免費練習連結。<br>
         • 口語、寫作題目包括教育、環境、科技、工作、城市等常考話題。<br>
         估分只係按比例估算，題目少，只供參考。題目係按 IELTS 官方題型原創，唔係真題。`)}
+      ${sec('🗺️', '備考路線圖（由而家到考試）', `首頁「今日任務」右上角撳「🗺️ 備考路線圖」：<br>
+        • 分 6 個階段：準備 → 摸底 → 補技巧 → 模擬考 → 衝刺 → 考試當日。App 會按考試日期標示「而家做呢個」。<br>
+        • 做完一項撳一下就 ✅，再撳取消。「補技巧」同「模擬考」係每星期一重新開始。<br>
+        • 每次做完 Cambridge 真題，喺「📊 模擬考分數」記低 L/R/W/S，睇進度；Ben 亦會睇到。`)}
       ${sec('🤖', 'AI 評分點設定？', `設定 → 「AI 評分」：貼上 Ben 俾你嘅 Gemini key，撳「儲存並測試」。見到 ✅ 就用得。<br>
         • 免費版每日有限額，用完會提你聽日再試。<br>
         • 句子卡講啱咗會直接顯示「✅ 完全正確」，唔使用 AI；講法唔同先撳 🤖 問 AI（通常 2–5 秒）。超過 10 秒會自動停，再撳一次就得。<br>
@@ -1343,7 +1395,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     const route = V[r] ? r : 'home';
     if (!['quizrun', 'study', 'listen', 'dict'].includes(route)) { if (window.speechSynthesis) speechSynthesis.cancel(); }
     document.body.classList.toggle('focus', ['study', 'quizrun', 'write', 'read', 'listen', 'dict'].includes(route));
-    const tabFor = { deck: 'library', quizrun: 'quiz', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', settings: 'home', study: 'home', feedback: 'home', help: 'home' }[route] || route;
+    const tabFor = { deck: 'library', quizrun: 'quiz', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', settings: 'home', study: 'home', feedback: 'home', help: 'home', plan: 'home' }[route] || route;
     document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabFor));
     $('#app').innerHTML = V[route](arg ? decodeURIComponent(arg) : undefined);
     after(route);
@@ -1445,6 +1497,13 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       const id = el.dataset.id; if (!confirm('刪除呢個生字？（連埋佢嘅學習記錄）')) return;
       S.custom = S.custom.filter(c => c.id !== id); delete S.cards[id]; delete S.stars[id];
       save(); rebuild(); closeModal(); render(); toast('已刪除');
+    },
+    rmTick: el => { const k = el.dataset.k; if (S.roadmap[k]) delete S.roadmap[k]; else { S.roadmap[k] = today(); confetti(25); } save(); render(); },
+    mkAdd: () => {
+      const v = x => { const n = parseFloat(($('#mk' + x).value || '').trim()); return n >= 0 && n <= 9 ? Math.round(n * 2) / 2 : null; };
+      const m = { d: today(), L: v('L'), R: v('R'), W: v('W'), S: v('S'), n: ($('#mkN').value || '').trim().slice(0, 80) };
+      if ([m.L, m.R, m.W, m.S].every(x => x == null)) return toast('最少填一項分數（0–9）');
+      S.mocks.push(m); logEv({ k: 'mock', L: m.L, R: m.R, W: m.W, S: m.S, n: m.n }); save(); render(); toast('已記低 👍');
     },
     goIelts: el => { IEL.tab = el.dataset.tab; GQ = null; if (location.hash === '#ielts') render(); else location.hash = '#ielts'; },
     goDict: () => { location.hash = '#dict'; },

@@ -950,7 +950,7 @@
         <p class="small muted">⚠️ 免費版 Google 可能會用送出嘅內容改進產品：唔好寫病人資料或者個人私隱。</p>
         <p class="small" id="aiStatus" style="font-weight:700">${aiReady() ? '✅ 已設定' + (AIC.models ? '：' + esc(AIC.models[0]) : '') : '未設定'}</p>
         <label>Gemini API key</label><input id="aiKeyIn" type="password" autocomplete="off" autocapitalize="none" placeholder="${aiReady() ? '已設定（想換先填）' : 'AIza…（由 Ben 提供）'}">
-        <div class="grid2" style="margin-top:10px"><button class="btn-primary" data-act="aiSave">儲存並測試</button>${aiReady() ? '<button class="btn-ghost" data-act="aiRemove">移除</button>' : '<span></span>'}</div></div>
+        <div class="grid2" style="margin-top:10px"><button class="btn-primary" data-act="aiSave">儲存並測試</button>${aiReady() ? '<button class="btn-ghost" data-act="aiRemove">移除</button>' : '<span></span>'}</div>${aiUsageHtml()}</div>
       <h2>☁️ 同步俾 Ben 睇（可選）</h2>
       <div class="card"><p class="small">連接之後，學習記錄同意見箱會自動上載去 Ben 嘅<b>私人</b> GitHub repo，佢可以叫 Claude 分析你嘅強弱項、調整練習。Token 只存喺呢部手機。</p>
         <p class="small" id="syncStatus" style="font-weight:700">${esc(syncStatusText())}</p>
@@ -1158,6 +1158,34 @@
     if (/^gemini-3/.test(m)) return { thinkingLevel: fast ? 'minimal' : 'low' };
     return null;
   }
+  // ===== AI 用量（Google 唔會話剩幾多，所以喺手機自己數；免費額度喺美國太平洋時間半夜重置）=====
+  const ptDay = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  function aiUse(m) {
+    if (!AIC.usage || AIC.usage.day !== ptDay()) AIC.usage = { day: ptDay(), m: {} };
+    return AIC.usage.m[m] || (AIC.usage.m[m] = { n: 0, tok: 0 });
+  }
+  function aiResetText() {
+    const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()).split(':').map(Number);
+    const left = 24 * 60 - (p[0] * 60 + p[1]); const at = new Date(Date.now() + left * 60000);
+    return `約 ${Math.floor(left / 60)} 小時 ${left % 60} 分後（香港時間 ${pad(at.getHours())}:00）`;
+  }
+  function aiUsageHtml(short) {
+    if (!aiReady()) return '';
+    aiUse('_'); delete AIC.usage.m._;
+    const ms = (AIC.models || []).slice(); Object.keys(AIC.usage.m).forEach(m => { if (!ms.includes(m)) ms.push(m); });
+    const total = Object.values(AIC.usage.m).reduce((a, u) => a + u.n, 0);
+    if (short) {
+      const full = ms.filter(m => aiUse(m).full).length;
+      return `<p class="small muted" style="margin-top:6px">📊 今日用咗 ${total} 次 AI${full ? ` · ${full} 個型號已爆額` : ''} · <a href="#settings">睇用量</a></p>`;
+    }
+    const rows = ms.map(m => { const u = aiUse(m); const lim = (AIC.limits || {})[m];
+      const st = u.full ? '<b style="color:var(--bad)">今日已爆額</b>' : lim ? `<b style="color:${lim - u.n <= 3 ? 'var(--warn)' : 'var(--good)'}">估計剩 ${Math.max(0, lim - u.n)} 次</b>` : '<span class="muted">未知上限</span>';
+      return `<div class="row between small" style="margin:4px 0"><span>${esc(m.replace('gemini-', ''))}</span><span>用咗 ${u.n}${lim ? '/' + lim : ''} 次 · ${st}</span></div>`; }).join('');
+    return `<div class="card tight" style="margin-top:10px"><b>📊 今日 AI 用量</b>
+      ${rows || '<p class="small muted">今日未用過</p>'}
+      <p class="small muted" style="margin-top:6px">今日總共 ${total} 次。${aiResetText()}重置。<br>Google 唔會直接話剩幾多次，所以 app 自己數；第一次爆額時會記低 Google 講嘅上限，之後就估到剩幾多。一個型號爆額會自動轉用下一個。<br>
+      官方用量：<a href="https://aistudio.google.com/usage" target="_blank" rel="noopener">Google AI Studio ↗</a>（用開 key 嗰個 Google 帳號登入）</p></div>`;
+  }
   async function aiCall(prompt, kind, media) {
     if (!aiReady()) throw new Error('未設定 AI（設定 → AI 評分）');
     if (!navigator.onLine) throw new Error('要有網先用到 AI');
@@ -1165,6 +1193,7 @@
     let models = AIC.models && AIC.models.length ? AIC.models : await aiPickModels();
     if (L.fast) models = models.filter(m => /lite/.test(m)).concat(models.filter(m => !/lite/.test(m)));
     let last = '';
+    const avail = models.filter(m => !aiUse(m).full); if (avail.length) models = avail;
     for (const m of models) {
       const gen = { temperature: 0.3, responseMimeType: 'application/json', maxOutputTokens: L.tok };
       let tc = AIC.noThink && AIC.noThink[m] ? null : thinkCfg(m, L.fast);
@@ -1184,11 +1213,17 @@
         break;
       }
       if (!r) continue;
-      if (r.status === 429) { last = '今日免費額度用完，聽日再試（或者等一分鐘）'; continue; }
+      if (r.status === 429) {
+        const t = await r.text().catch(() => '');
+        const daily = /PerDay/i.test(t); const lim = Number((t.match(/"quotaValue"\s*:\s*"?(\d+)/) || [])[1]) || null;
+        const u = aiUse(m); if (daily) { u.full = Date.now(); if (lim) AIC.limits = Object.assign({}, AIC.limits, { [m]: lim }); } else u.rpm = Date.now(); saveAIC();
+        last = daily ? `今日免費額度用完（${aiResetText()}重置）` : '用得太密，等一分鐘再試'; continue;
+      }
       if (r.status === 404) { last = '型號唔存在'; AIC.models = null; saveAIC(); continue; }
       if (r.status === 400 || r.status === 401 || r.status === 403) throw new Error('API key 無效或冇權限');
       if (!r.ok) { last = 'Gemini 回應 ' + r.status; continue; }
       const j = await r.json();
+      const u = aiUse(m); u.n++; u.tok += ((j.usageMetadata || {}).totalTokenCount || 0); saveAIC();
       const txt = (((j.candidates || [])[0] || {}).content || { parts: [] }).parts.map(p => p.text || '').join('');
       try { const out = JSON.parse(txt.replace(/^```(json)?|```$/g, '').trim()); out._model = m; return out; } catch (e) { last = 'AI 回覆格式有問題，再試一次'; }
     }
@@ -1249,7 +1284,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       ${r.corrections && r.corrections.length ? `<h3 style="margin-top:10px">✏️ 改正</h3>${r.corrections.map(c => `<p class="small" style="margin:6px 0"><span style="color:var(--bad);text-decoration:line-through">${esc(c.wrong)}</span> → <b style="color:var(--good)">${esc(c.right)}</b><br><span class="muted">${esc(c.why)}</span></p>`).join('')}` : ''}
       ${r.pron && r.pron.length ? `<h3 style="margin-top:10px">🗣️ 發音要留意</h3>${r.pron.map(x => `<p class="small" style="margin:6px 0"><b>${esc(x.word)}</b> ${spk(x.word)}<br><span class="muted">${esc(x.tip)}</span></p>`).join('')}` : ''}
       ${r.better ? `<h3 style="margin-top:10px">⭐ 參考寫法</h3><div class="ex small">${esc(r.better)} ${spk(r.better)}</div>` : ''}
-      <p class="small muted" style="margin-top:8px">AI 評分只供參考，同真考官可能有差距（±0.5–1）。</p></div>`;
+      <p class="small muted" style="margin-top:8px">AI 評分只供參考，同真考官可能有差距（±0.5–1）。</p>${aiUsageHtml(true)}</div>`;
   }
 
   // ===== 考試倒數 + 今日任務 =====
@@ -1368,7 +1403,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 做完一項撳一下就 ✅，再撳取消。「補技巧」同「模擬考」係每星期一重新開始。<br>
         • 每次做完 Cambridge 真題，喺「📊 模擬考分數」記低 L/R/W/S，睇進度；Ben 亦會睇到。`)}
       ${sec('🤖', 'AI 評分點設定？', `設定 → 「AI 評分」：貼上 Ben 俾你嘅 Gemini key，撳「儲存並測試」。見到 ✅ 就用得。<br>
-        • 免費版每日有限額，用完會提你聽日再試。<br>
+        • 免費版每日有限額。<b>設定 → AI 評分</b> 下面有「📊 今日 AI 用量」：每個型號用咗幾多次、剩幾多（第一次爆額之後先估到）、幾點重置（香港時間下午 3–4 點左右）。一個型號用完會自動轉另一個。<br>
         • 句子卡講啱咗會直接顯示「✅ 完全正確」，唔使用 AI；講法唔同先撳 🤖 問 AI（通常 2–5 秒）。超過 10 秒會自動停，再撳一次就得。<br>
         • AI 分數只供參考（同真考官可能差 0.5–1 分），最有用係睇「改正」同「點樣改進」。<br>
         • 唔好喺練習入面寫病人名或者私人資料。`)}

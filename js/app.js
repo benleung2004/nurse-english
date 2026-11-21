@@ -34,7 +34,7 @@
 
   // ===== 資料儲存（只存喺手機 localStorage） =====
   const KEY = 'nurse-english-v1';
-  const DEFAULTS = { name: '', dailyGoal: 20, newPerDay: 10, maxReview: 100, zhMode: 'tap', accent: 'en-GB', rate: 0.9, theme: 'auto', decks: null, remind: '21:00', hideInstall: false };
+  const DEFAULTS = { name: '', dailyGoal: 20, newPerDay: 10, maxReview: 100, zhMode: 'tap', accent: 'en-GB', rate: 0.9, theme: 'auto', decks: null, remind: '21:00', hideInstall: false, examDate: '', examType: 'ac', target: '6.5', seenHelp: false };
   function load() {
     let d = {};
     try { d = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { d = {}; }
@@ -104,6 +104,8 @@
     return '☁️ 已連接，未同步';
   }
   window.addEventListener('online', () => scheduleSync());
+  // 離開 app（轉 app／鎖機）時即刻上載，確保 Ben 睇到最新
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && syncReady()) syncNow(false); });
 
   // ===== 強項／弱項分析（App 顯示 + 匯出俾 Claude）=====
   const QTYPE = { mcZh: '英→中選擇', mcEn: '中／解釋→英選擇', listen: '聽力', spell: '串字' };
@@ -121,7 +123,18 @@
     const decks = Object.keys(byDeck).filter(k => byDeck[k].n >= 5 && DECKMAP[k]).map(k => ({ deck: k, name: DECKMAP[k].zh, n: byDeck[k].n, pct: rate(byDeck[k]) })).sort((a, b) => b.pct - a.pct);
     const types = Object.keys(byType).map(k => ({ type: k, name: QTYPE[k] || k, n: byType[k].n, pct: rate(byType[k]) })).filter(x => x.n >= 3).sort((a, b) => b.pct - a.pct);
     const says = ev.filter(e => e.k === 'say');
+    const avgPct = (k, f) => { const xs = ev.filter(e => e.k === k); return xs.length ? { n: xs.length, pct: Math.round(xs.reduce((s, e) => s + f(e), 0) / xs.length * 100) } : null; };
+    const gcat = {}; ev.filter(e => e.k === 'gram').forEach(e => add(gcat, e.cat, e.ok));
+    const ai = ev.filter(e => e.k === 'ai' && e.band);
+    const aiBy = {}; ai.forEach(e => { (aiBy[e.kind] = aiBy[e.kind] || []).push(e.band); });
+    const skills = {
+      reading: avgPct('read', e => e.sc / e.n), listening: avgPct('listen', e => e.sc / e.n),
+      dictation: avgPct('dict', e => e.acc), recall: avgPct('recall', e => e.sc),
+      grammar: Object.keys(gcat).map(k => ({ cat: k, name: (NE.grammarCats || {})[k] || k, n: gcat[k].n, pct: rate(gcat[k]) })).sort((a, b) => a.pct - b.pct),
+      aiBands: Object.keys(aiBy).map(k => ({ kind: k, n: aiBy[k].length, avg: Math.round(aiBy[k].reduce((a, b) => a + b, 0) / aiBy[k].length * 2) / 2 }))
+    };
     return {
+      skills,
       days: days || 30,
       strengths: decks.filter(d => d.pct >= 80).slice(0, 3),
       weaknesses: decks.filter(d => d.pct < 70).slice(-3).reverse(),
@@ -370,7 +383,7 @@
     const L = logToday();
     if (!SES.seen.has(id)) { SES.seen.add(id); if (!prev) L.n++; else L.r++; }
     if (g === 0) { SES.again++; SES.queue.splice(Math.min(SES.i + 4, SES.queue.length), 0, id); } else SES.good++;
-    SES.i++; SES.revealed = false; SES.showZh = false; SES.hint = false; SES.anim = 'enter';
+    SES.i++; SES.revealed = false; SES.showZh = false; SES.hint = false; SES.rec = null; SES.typed = ''; SES.anim = 'enter';
     save(); checkGoal(); render();
   }
 
@@ -393,9 +406,12 @@
     return `
     <div class="hello">
       <div><div class="muted small">${new Date().getMonth() + 1}月${new Date().getDate()}日 星期${wd}</div>
-      <h1>${greet}${S.settings.name ? '，' + esc(S.settings.name) : ''} 👋</h1></div>
-      <a class="btn icon-btn" href="#settings" aria-label="設定">⚙️</a>
+      <h1>${greet}${S.settings.name ? '，' + esc(S.settings.name) : ''} 👋</h1>
+      <a href="#settings" class="pill" style="text-decoration:none;${syncReady() && !SY.lastError ? '' : 'background:rgba(239,90,90,.14);color:var(--bad)'}">${esc(syncReady() ? syncStatusText() : '☁️ 未連接同步：撳呢度設定')}</a></div>
+      <div class="row" style="flex-wrap:nowrap;gap:8px"><a class="btn icon-btn" href="#help" aria-label="使用說明">❓</a><a class="btn icon-btn" href="#settings" aria-label="設定">⚙️</a></div>
     </div>
+    ${!S.settings.seenHelp ? `<div class="card tight" style="border-left:5px solid var(--accent)"><b>👋 第一次用？</b><p class="small">睇 1 分鐘使用說明，知道每日做咩、點樣用。</p>
+      <div class="row"><a class="btn btn-accent" href="#help">📖 睇使用說明</a><button class="btn-ghost" data-act="hideWelcome">唔使喇</button></div></div>` : ''}
     <div class="card hero">
       <div class="goal">
         ${ring(act, goal)}
@@ -425,6 +441,7 @@
       <button class="action" data-act="addWord"><span class="ico c-orange">＋</span>加生字</button>
     </div>
     <div style="height:12px"></div>
+    ${examCard()}
     ${coachCard()}
     <a class="card tight deckrow" href="#feedback" style="color:inherit;text-decoration:none;--dc-soft:rgba(255,107,154,.16)"><div class="ic">💌</div>
       <div class="grow"><b>意見箱</b><div class="small muted">有咩想改、唔明、錯字，寫低俾 Ben${Object.keys((NE.coach || {}).replies || {}).some(id => S.feedback.some(f => f.id === id)) ? ' · 有回覆 💬' : ''}</div></div><span>›</span></a>
@@ -447,13 +464,25 @@
     const prev = S.cards[c.id];
     const isNew = !prev;
     let front, back = '';
+    const recallBox = SES.revealed ? '' : `<div class="row" style="flex-wrap:nowrap;margin-top:4px"><input id="recallIn" value="${esc(SES.typed || '')}" autocomplete="off" autocapitalize="${dk.say ? 'sentences' : 'none'}" placeholder="${dk.say ? '🎤 講出嚟或者打英文…' : '打中文意思（可選）'}">
+      <button class="speak" data-act="dictate" data-target="recallIn" data-lang="${dk.say ? 'en' : 'zh'}" aria-label="講">🎤</button></div>
+      <div class="small muted">${dk.say ? '先自己講／打，再對答案，會有分數' : '答咗先揭，會幫你對答案'}</div>`;
+    let recallRes = '';
+    if (SES.revealed && SES.rec) {
+      const R = SES.rec;
+      recallRes = R.m
+        ? `<div class="fb ${R.sc >= .85 ? 'ok' : 'no'} small"><b>你講：</b>${esc(R.v)}<br><b>${Math.round(R.sc * 100)}%</b>　${R.m.words.map((w, i) => `<span style="${R.m.hit.has(i) ? 'color:var(--good)' : 'color:var(--bad);text-decoration:underline;font-weight:800'}">${esc(w)}</span>`).join(' ')}
+           <div class="row" style="margin-top:6px"><button class="chip" data-act="aiSay" data-id="${esc(c.id)}">🤖 AI 睇下我講法啱唔啱</button></div></div><div id="aiSayBox"></div>`
+        : `<div class="fb ${R.sc >= .6 ? 'ok' : 'no'} small"><b>你答：</b>${esc(R.v)}　→　${R.sc >= .6 ? '✅ 接近' : '🤔 再睇清楚'}（${Math.round(R.sc * 100)}%）</div>`;
+    }
     if (dk.say) {
-      front = `<div class="small muted">試下用英文講：</div><div class="term sentence">${esc(fill(c.zh))}</div><div class="small muted">情境：${esc(c.def)}</div>`;
+      front = `<div class="small muted">試下用英文講：</div><div class="term sentence">${esc(fill(c.zh))}</div><div class="small muted">情境：${esc(c.def)}</div>${recallBox}`;
       if (SES.revealed) back = `<div class="fade-in"><div class="row" style="align-items:flex-start"><div class="term sentence grow" style="color:${dc}">${esc(fill(c.en))}</div>${spk(speakText(c))}</div></div>`;
     } else {
       front = `<div class="row" style="align-items:flex-start"><div class="term grow">${esc(c.en)}</div>${spk(speakText(c))}</div>
         ${dk.abbr ? '<div class="small muted">呢個縮寫代表咩？</div>' : dk.roots ? '<div class="small muted">呢個字根／字首字尾係咩意思？</div>' : ''}
-        ${!SES.revealed ? (SES.hint ? `<div class="zh fade-in">${esc(c.zh)}</div>` : `<div><button class="reveal-zh" data-act="hint">💡 唔肯定？睇中文提示</button></div>`) : ''}`;
+        ${!SES.revealed ? (SES.hint ? `<div class="zh fade-in">${esc(c.zh)}</div>` : `<div><button class="reveal-zh" data-act="hint">💡 唔肯定？睇中文提示</button></div>`) : ''}
+        ${SES.hint ? '' : recallBox}`;
       if (SES.revealed) back = `<div class="fade-in" style="display:flex;flex-direction:column;gap:10px">
         <div class="def"><b>${esc(c.def)}</b></div>
         ${showZh ? `<div class="zh">${esc(c.zh)}</div>` : `<div><button class="reveal-zh" data-act="showZh">顯示中文 🀄</button></div>`}
@@ -461,6 +490,7 @@
       </div>`;
     }
     const extra = SES.revealed ? `
+      ${recallRes}
       ${c.note ? `<div class="note">💬 ${esc(fill(c.note))}</div>` : ''}
       <div class="row small">
         <button class="chip" data-act="star" data-id="${esc(c.id)}">${S.stars[c.id] ? '⭐ 已收藏' : '☆ 收藏'}</button>
@@ -691,10 +721,20 @@
   // ===== IELTS =====
   const IEL = { tab: 'speak', part: 1, idx: {}, task: 2 };
   V.ielts = () => {
-    const tabs = [['speak', '🎤 口語'], ['write', '✍️ 寫作'], ['vocab', '📘 字彙'], ['tips', '💡 貼士']];
+    const tabs = [['speak', '🎤 口語'], ['write', '✍️ 寫作'], ['read', '📖 閱讀'], ['listen', '🎧 聽力'], ['gram', '🧩 文法'], ['para', '🔁 改寫'], ['vocab', '📘 字彙'], ['tips', '💡 貼士']];
     let body = '';
     if (IEL.tab === 'speak') body = speakHtml();
     else if (IEL.tab === 'write') body = writeListHtml();
+    else if (IEL.tab === 'read') body = `<p class="small muted">每篇約 15 分鐘。交卷後有答案解釋同估分。</p>` + NE.reading.map(r => `<a class="card tight" href="#read/${r.id}" style="display:block;color:inherit;text-decoration:none">
+        <div class="row between"><b>${esc(r.title)}</b>${lastScore('read', r.id) ? `<span class="pill master">上次 ${lastScore('read', r.id)}</span>` : '<span class="pill new">未做</span>'}</div>
+        <div class="small muted">${esc(r.zh)} · ${r.qs.length} 題 · T/F/NG、填字、選擇</div></a>`).join('');
+    else if (IEL.tab === 'listen') body = `<button class="card tight deckrow" data-act="goDict" style="width:100%;text-align:left;--dc-soft:rgba(139,92,246,.16)"><div class="ic">✍️</div><div class="grow"><b>聽寫練習</b><div class="small muted">聽一句打一句，練聽力同串字（無限句）</div></div><span>›</span></button>
+      <h2>對話填表</h2>` + NE.listening.map(r => `<a class="card tight" href="#listen/${r.id}" style="display:block;color:inherit;text-decoration:none">
+        <div class="row between"><b>${esc(r.title)}</b>${lastScore('listen', r.id) ? `<span class="pill master">上次 ${lastScore('listen', r.id)}</span>` : '<span class="pill new">未做</span>'}</div>
+        <div class="small muted">${esc(r.zh)} · ${esc(r.part)} · ${r.qs.length} 題</div></a>`).join('') +
+      `<p class="small muted">讀音用手機內置聲音，同真考試錄音唔同。建議每星期都做一份官方練習卷（見「貼士」）。</p>`;
+    else if (IEL.tab === 'gram') body = gramHtml();
+    else if (IEL.tab === 'para') body = paraHtml();
     else if (IEL.tab === 'vocab') body = `${DECKS.filter(d => d.cat === 'ielts').map(deckRow).join('')}
       <h2>🔗 連接詞速查</h2>${linkingHtml()}`;
     else body = tipsHtml();
@@ -725,6 +765,12 @@
         </div>
         <div id="recBox" style="margin-top:10px"></div>
       </div>
+      <div class="card"><h3>🗣️ 講答案 → 轉文字 → 🤖 AI 評分</h3>
+        <p class="small muted">撳 🎤 開始講，講完再撳一下停。都可以用 iPhone 鍵盤嘅咪高峰，或者直接打字。（同上面錄音分開用）</p>
+        <button class="btn-accent btn-block" data-act="dictate" data-target="spkText" data-lang="en">🎤 開始講</button>
+        <textarea id="spkText" placeholder="你講嘅嘢會出現喺度…" style="min-height:110px;margin-top:8px">${esc(IEL.spk || '')}</textarea>
+        <button class="btn-primary btn-block" style="margin-top:8px" data-act="aiSpeak">🤖 AI 評分（流暢、用字、文法）</button>
+        <div id="aiSpkBox"></div></div>
       <div class="grid2"><button class="btn-ghost" data-act="nextSpeak">🔀 換一題</button><button class="btn-primary" data-act="speakDone">✅ 練完呢題</button></div>
       <a class="btn btn-ghost btn-block" style="margin-top:10px" href="#deck/ielts-speak">🗣️ 溫習口語實用句</a>`;
   }
@@ -770,10 +816,13 @@
       <button class="chip" data-act="tgo" data-s="${mins * 60}">⏱️ 開始</button></div></div>
       <textarea id="essay" data-id="${esc(id)}" placeholder="喺度寫…（自動儲存）" spellcheck="true">${esc(d.text)}</textarea>
       <div class="row between small" style="margin:6px 0 10px"><span id="wc" class="muted">${countWords(d.text)} / ${target} 字</span><span class="muted">${d.t ? '已儲存' : ''}</span></div>
+      <button class="btn-accent btn-block" data-act="aiEssay" data-id="${esc(id)}">🤖 AI 批改（估 Band + 改錯 + 建議）</button>
+      <div id="aiEssayBox">${d.ai ? `<p class="small muted center" style="margin-top:8px">上次 AI 批改：${esc(new Date(d.ai.at).toLocaleString('zh-HK'))}</p>` + aiResultHtml(d.ai.res) : ''}</div>
+      <div style="height:10px"></div>
       <details class="card tight"><summary>✅ 交之前自我檢查</summary>${checks.map((c, i) => `<label class="row" style="color:var(--text);font-weight:500;margin:6px 0"><input type="checkbox" id="ck${i}"> ${esc(c)}</label>`).join('')}</details>
       ${sample ? `<details class="card tight"><summary>📄 參考範文（寫完先睇！）</summary><p class="small muted">${esc(sample.note)}</p><div class="essay">${esc(sample.text)}</div></details>` : ''}
       <button class="btn-primary btn-block" data-act="essayDone" data-id="${esc(id)}">✅ 完成呢篇</button>
-      <p class="small muted center">想有人幫你改？可以將文章 copy 去俾老師或者 AI 批改，對照上面評分準則。</p>`;
+      <p class="small muted center">AI 批改後，按「改正」自己改一次再批改，進步最快。</p>`;
   };
 
   // ===== 進度 =====
@@ -823,11 +872,24 @@
         <label>讀音速度：<span id="rateV">${s.rate}</span></label><div class="row" style="flex-wrap:nowrap"><input type="range" min="0.6" max="1.1" step="0.05" data-set="rate" value="${s.rate}"><button class="chip" data-act="speak" data-text="Please take a deep breath in, and out.">🔊 試聽</button></div>
         <label>外觀</label>${sel('theme', [['auto', '跟手機'], ['light', '淺色'], ['dark', '深色']])}
       </div>
+      <h2>🎯 IELTS 目標</h2>
+      <div class="card">
+        <label>考試日期（首頁會倒數）</label><input type="date" data-set="examDate" value="${esc(s.examDate)}">
+        <label>考試類別</label>${sel('examType', [['ac', 'Academic（學術）'], ['gt', 'General Training（一般）']])}
+        <label>目標分數</label>${sel('target', [['5.5', '5.5'], ['6', '6.0'], ['6.5', '6.5'], ['7', '7.0']])}
+      </div>
+      <a class="btn btn-ghost btn-block" href="#help" style="margin-top:12px">📖 使用說明</a>
       <h2>新字來源（揀想學嘅字庫）</h2>
       <div class="card">${CATS.map(([cat, t]) => `<div class="small muted" style="margin-top:6px">${t}</div>` + DECKS.filter(d => d.cat === cat).map(d => `<label class="row" style="color:var(--text);font-weight:500;margin:8px 0"><input type="checkbox" data-deck-toggle="${esc(d.id)}" ${en.includes(d.id) ? 'checked' : ''}> ${esc(d.icon)} ${esc(d.zh)}</label>`).join('')).join('')}</div>
       <h2>⏰ 每日提醒</h2>
       <div class="card"><p class="small">下載一個每日重複嘅日曆提醒（.ics），加入 iPhone／Android 日曆，到鐘就會彈通知。</p>
         <div class="row" style="flex-wrap:nowrap"><input type="time" data-set="remind" value="${esc(s.remind)}"><button class="btn-primary" data-act="ics">下載提醒</button></div></div>
+      <h2>🤖 AI 評分（免費 Gemini）</h2>
+      <div class="card"><p class="small">寫作、口語、改寫、實用句可以叫 AI 評分同改錯。用 Google 免費 Gemini API key，每日有免費額度。Key 只存喺呢部手機。</p>
+        <p class="small muted">⚠️ 免費版 Google 可能會用送出嘅內容改進產品：唔好寫病人資料或者個人私隱。</p>
+        <p class="small" id="aiStatus" style="font-weight:700">${aiReady() ? '✅ 已設定' + (AIC.models ? '：' + esc(AIC.models[0]) : '') : '未設定'}</p>
+        <label>Gemini API key</label><input id="aiKeyIn" type="password" autocomplete="off" autocapitalize="none" placeholder="${aiReady() ? '已設定（想換先填）' : 'AIza…（由 Ben 提供）'}">
+        <div class="grid2" style="margin-top:10px"><button class="btn-primary" data-act="aiSave">儲存並測試</button>${aiReady() ? '<button class="btn-ghost" data-act="aiRemove">移除</button>' : '<span></span>'}</div></div>
       <h2>☁️ 同步俾 Ben 睇（可選）</h2>
       <div class="card"><p class="small">連接之後，學習記錄同意見箱會自動上載去 Ben 嘅<b>私人</b> GitHub repo，佢可以叫 Claude 分析你嘅強弱項、調整練習。Token 只存喺呢部手機。</p>
         <p class="small" id="syncStatus" style="font-weight:700">${esc(syncStatusText())}</p>
@@ -841,6 +903,329 @@
         <input type="file" id="importFile" accept="application/json,.json" class="hidden">
         <button class="btn-ghost btn-block" style="margin-top:10px;color:var(--bad)" data-act="reset">重設所有學習記錄</button></div>
       <p class="small muted center">Made with ❤️ · 內容 ${NE.cards.length} 張卡 · 資料只存喺本機</p>`;
+  };
+
+  // ===== IELTS 練習：閱讀／聽力／聽寫／文法／改寫 =====
+  const normAns = s => String(s == null ? '' : s).toLowerCase()
+    .replace(/(\d)\.(\d)/g, '$1:$2').replace(/(\d)\s*(am|pm|a\.m\.|p\.m\.)/g, '$1').replace(/(\d)(st|nd|rd|th)\b/g, '$1')
+    .replace(/\b(the|of|dr|doctor)\b/g, ' ').replace(/[^a-z0-9: ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const ansOk = (v, list) => { const a = normAns(v); if (!a) return false; return list.some(x => { const b = normAns(x); return a === b || a.replace(/ /g, '') === b.replace(/ /g, ''); }); };
+  function bandFor(kind, ok, total) {
+    const raw = Math.round(ok / total * 40);
+    return (NE.bandTable[kind].find(([min]) => raw >= min) || [0, 3.5])[1];
+  }
+  const lastScore = (k, id) => { const e = S.events.filter(x => x.k === k && x.id === id).pop(); return e ? `${e.sc}/${e.n}` : ''; };
+  const TF = { T: 'True', F: 'False', NG: 'Not Given' };
+
+  let RD = null;
+  V.read = id => {
+    const P = NE.reading.find(r => r.id === id); if (!P) return '<p>搵唔到文章</p>';
+    if (!RD || RD.id !== id) RD = { id, ans: {}, done: false };
+    const res = RD.done ? RD.res : null;
+    const qHtml = P.qs.map((q, i) => {
+      const r = res && res[i]; const mark = r ? (r.ok ? '✅' : '❌') : `${i + 1}.`;
+      let input;
+      if (q.t === 'tfng') input = `<div class="row">${['T', 'F', 'NG'].map(v => `<button class="chip ${RD.ans[i] === v ? 'on' : ''}" data-act="rdAns" data-i="${i}" data-v="${v}" ${RD.done ? 'disabled' : ''}>${TF[v]}</button>`).join('')}</div>`;
+      else if (q.t === 'gap') input = `<input data-rq="${i}" value="${esc(RD.ans[i] || '')}" autocapitalize="none" autocomplete="off" placeholder="ONE WORD ONLY" ${RD.done ? 'disabled' : ''}>`;
+      else input = `<div class="choices">${q.c.map((c, k) => `<button class="${RD.ans[i] === String(k) ? 'right' : ''}" style="${RD.ans[i] === String(k) && !RD.done ? 'border-color:var(--primary2)' : ''}" data-act="rdAns" data-i="${i}" data-v="${k}" ${RD.done ? 'disabled' : ''}>${'ABCD'[k]}. ${esc(c)}</button>`).join('')}</div>`;
+      const fb = r ? `<div class="fb ${r.ok ? 'ok' : 'no'} small" style="margin-top:6px">答案：<b>${esc(q.t === 'tfng' ? TF[q.a] : q.t === 'gap' ? q.a[0] : 'ABCD'[q.a] + '. ' + q.c[q.a])}</b><br>${esc(q.why)}</div>` : '';
+      return `<div style="margin:14px 0"><div style="font-weight:600;margin-bottom:6px">${mark} ${esc(q.q)}</div>${input}${fb}</div>`;
+    }).join('');
+    const n = P.qs.length;
+    return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#ielts" data-act="goIelts" data-tab="read">‹</a><h1 class="grow" style="font-size:20px">📖 ${esc(P.title)}</h1></div>
+      <p class="small muted">${esc(P.zh)} · 建議 ${P.mins} 分鐘 · 先睇題目再搵答案</p>
+      ${res ? `<div class="card hero center"><div class="score">${RD.score}/${n}</div><p>按比例估算約 <b>Band ${bandFor('reading', RD.score, n)}</b>（題目少，只供參考）</p></div>` : `<div class="card center tight"><div class="row between"><span class="small muted" id="timerLabel">${P.mins} 分鐘計時</span><span class="timer" id="timerDisp" style="font-size:26px">${P.mins}:00</span><button class="chip" data-act="tgo" data-s="${P.mins * 60}">⏱️ 開始</button></div></div>`}
+      <div class="card">${P.paras.map((p, i) => `<p><b style="color:var(--primary2)">${'ABCDEFG'[i]}</b>　${esc(p)}</p>`).join('')}</div>
+      <div class="card"><h3>Questions</h3>
+        <details class="small"><summary>💡 True / False / Not Given 點分？</summary>
+        <p><b>True</b>：文章意思一樣（通常用咗同義詞）<br><b>False</b>：文章講咗相反<br><b>Not Given</b>：文章根本冇講。唔好用自己常識判斷！</p></details>
+        ${qHtml}</div>
+      ${RD.done ? `<div class="grid2"><button class="btn-ghost" data-act="rdReset">🔁 重做</button><a class="btn btn-primary" href="#ielts" data-act="goIelts" data-tab="read">返閱讀列表</a></div>` : `<button class="btn-primary btn-big btn-block" data-act="rdSubmit">交卷 ✅</button>`}`;
+  };
+
+  let LS = null;
+  V.listen = id => {
+    const P = NE.listening.find(r => r.id === id); if (!P) return '<p>搵唔到練習</p>';
+    if (!LS || LS.id !== id) LS = { id, ans: {}, done: false };
+    const n = P.qs.length;
+    return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#ielts" data-act="goIelts" data-tab="listen">‹</a><h1 class="grow" style="font-size:20px">🎧 ${esc(P.title)}</h1></div>
+      <p class="small muted">${esc(P.zh)} · ${esc(P.part)} · 開始前先睇晒題目，估下要填咩（名？數字？時間？）</p>
+      ${LS.done ? `<div class="card hero center"><div class="score">${LS.score}/${n}</div><p>按比例估算約 <b>Band ${bandFor('listening', LS.score, n)}</b>（只供參考）</p></div>` : ''}
+      <div class="card center">
+        <div class="grid2"><button class="btn-primary btn-big" data-act="lsPlay" id="lsPlayBtn">▶️ 播放</button><button class="btn-ghost btn-big" data-act="lsStop">⏹️ 停</button></div>
+        <p class="small muted" style="margin-top:8px">真考試只播一次。第一次試下只聽一次先答，之後先重聽。</p></div>
+      <div class="card"><h3>填寫答案（ONE WORD AND/OR A NUMBER）</h3>
+      ${P.qs.map((q, i) => { const r = LS.done && LS.res[i]; return `<label style="color:var(--text)">${r ? (r.ok ? '✅' : '❌') : (i + 1) + '.'} ${esc(q.q)}</label>
+        <input data-lq="${i}" value="${esc(LS.ans[i] || '')}" autocapitalize="none" autocomplete="off" ${LS.done ? 'disabled' : ''}>
+        ${r && !r.ok ? `<div class="small" style="color:var(--bad)">答案：${esc(q.a[0])}${q.why ? '　' + esc(q.why) : ''}</div>` : r && q.why ? `<div class="small muted">${esc(q.why)}</div>` : ''}`; }).join('')}
+      </div>
+      ${LS.done ? `<details class="card tight"><summary>📄 睇對白（邊度聽漏咗？）</summary>${P.lines.map(([sp, t]) => `<p class="small"><b>${sp === 'A' ? '🅰️' : '🅱️'}</b> ${esc(t)}</p>`).join('')}</details>
+        <div class="grid2"><button class="btn-ghost" data-act="lsReset">🔁 重做</button><a class="btn btn-primary" href="#ielts" data-act="goIelts" data-tab="listen">返聽力列表</a></div>`
+        : `<button class="btn-primary btn-big btn-block" data-act="lsSubmit">交卷 ✅</button>`}`;
+  };
+  function playLines(lines, btn) {
+    if (!('speechSynthesis' in window)) { toast('呢部機唔支援讀音'); return; }
+    speechSynthesis.cancel(); loadVoices();
+    const acc = S.settings.accent;
+    let pool = voices.filter(v => v.lang.replace('_', '-') === acc); if (!pool.length) pool = voices.filter(v => v.lang.startsWith('en'));
+    const vA = pool[0], vB = pool.find(v => v !== vA) || vA;
+    lines.forEach(([sp, text], k) => {
+      const u = new SpeechSynthesisUtterance(text); u.lang = acc; u.rate = S.settings.rate;
+      const v = sp === 'A' ? vA : vB; if (v) u.voice = v;
+      if (sp === 'B' && vB === vA) u.pitch = 1.35;
+      if (k === lines.length - 1) u.onend = u.onerror = () => btn && btn.classList.remove('playing');
+      speechSynthesis.speak(u);
+    });
+    if (btn) btn.classList.add('playing');
+  }
+
+  // 聽寫：由卡嘅例句同實用句隨機抽
+  let DC = null;
+  function newDict() {
+    const pool = [];
+    ALL.forEach(c => { const dk = deckOf(c); if (dk.roots || dk.abbr) return; if (dk.say) pool.push(fill(c.en)); else if (c.ex) pool.push(c.ex); });
+    DC = { text: pool[Math.floor(Math.random() * pool.length)], done: false, count: (DC ? DC.count : 0) };
+  }
+  function lcsMark(target, typed) {
+    const a = norm(target), b = norm(typed);
+    const dp = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
+    for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    const hit = new Set(); let i = 0, j = 0;
+    while (i < a.length && j < b.length) { if (a[i] === b[j]) { hit.add(i); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++; }
+    return { words: a, hit, acc: a.length ? hit.size / a.length : 0 };
+  }
+  V.dict = () => {
+    if (!DC) newDict();
+    let res = '';
+    if (DC.done) {
+      const m = DC.m;
+      res = `<div class="fb ${m.acc >= .9 ? 'ok' : 'no'}" style="margin-top:12px"><b>${Math.round(m.acc * 100)}%</b>　${m.words.map((w, i) => `<span style="${m.hit.has(i) ? 'color:var(--good)' : 'color:var(--bad);text-decoration:underline;font-weight:800'}">${esc(w)}</span>`).join(' ')}
+        <div class="small" style="margin-top:6px">原句：${esc(DC.text)}</div></div>
+        <button class="btn-primary btn-block" style="margin-top:10px" data-act="dcNext">下一句 →</button>`;
+    }
+    return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#ielts" data-act="goIelts" data-tab="listen">‹</a><h1 class="grow">✍️ 聽寫</h1><span class="pill">今次 ${DC.count} 句</span></div>
+      <p class="small muted">聽一句，打晒出嚟。練聽力同串字（IELTS 聽力串錯字冇分）。紅色 = 漏咗或者串錯。</p>
+      <div class="card center"><div class="grid2"><button class="btn-primary btn-big" data-act="dcPlay">🔊 播放</button><button class="btn-ghost btn-big" data-act="dcSlow">🐢 慢速</button></div></div>
+      <textarea id="dcIn" placeholder="聽到乜就打乜…" autocapitalize="sentences" style="min-height:100px" ${DC.done ? 'disabled' : ''}>${esc(DC.typed || '')}</textarea>
+      ${DC.done ? res : `<button class="btn-primary btn-block" style="margin-top:10px" data-act="dcCheck">對答案</button>`}`;
+  };
+
+  // 文法
+  let GQ = null;
+  function gramHtml() {
+    const stats = {}; S.events.filter(e => e.k === 'gram').forEach(e => { const x = stats[e.cat] || (stats[e.cat] = { n: 0, ok: 0 }); x.n++; if (e.ok) x.ok++; });
+    if (!GQ) return `<p class="small muted">香港考生最常錯嘅文法：冠詞、時態、單複數、不可數名詞。每題都有中文解釋。</p>
+      <button class="btn-primary btn-big btn-block" data-act="gramStart" data-cat="">🧩 隨機 10 題</button>
+      <h2>揀類別</h2><div class="card">${Object.entries(NE.grammarCats).map(([k, t]) => { const s = stats[k];
+        return `<div class="row between" style="margin:6px 0"><button class="chip" data-act="gramStart" data-cat="${k}">${esc(t)}</button><span class="small ${s ? '' : 'muted'}">${s ? Math.round(s.ok / s.n * 100) + '%（' + s.n + ' 題）' : '未做'}</span></div>`; }).join('')}</div>`;
+    if (GQ.i >= GQ.qs.length) {
+      const wrong = GQ.log.filter(x => !x.ok);
+      return `<div class="card hero center"><div class="score">${GQ.score}/${GQ.qs.length}</div><p>${GQ.score >= 8 ? '文法好穩陣！🌟' : '錯嘅地方睇清楚解釋 💪'}</p></div>
+        ${wrong.length ? `<div class="card"><h3>要留意</h3>${wrong.map(x => { const g = NE.grammar[x.g]; return `<p class="small"><b>${esc(g.q.replace('___', '【' + g.c[g.a] + '】'))}</b><br><span class="muted">${esc(g.why)}</span></p>`; }).join('')}</div>` : ''}
+        <div class="grid2"><button class="btn-primary" data-act="gramStart" data-cat="${esc(GQ.cat)}">再嚟 10 題</button><button class="btn-ghost" data-act="gramExit">返回</button></div>`;
+    }
+    const gi = GQ.qs[GQ.i], g = NE.grammar[gi];
+    return `<div class="row" style="flex-wrap:nowrap;margin-bottom:10px"><button class="icon-btn" data-act="gramExit">✕</button><div class="progress grow"><div style="width:${GQ.i / GQ.qs.length * 100}%"></div></div><span class="small muted">${GQ.i + 1}/${GQ.qs.length}</span></div>
+      <div class="card flash enter" style="min-height:0;--dc:#8b5cf6"><span class="deck-tag">🧩 ${esc(NE.grammarCats[g.cat])}</span><div class="term sentence">${esc(g.q)}</div></div>
+      <div class="choices">${g.c.map((c, k) => { let cls = ''; if (GQ.answered) { if (k === g.a) cls = 'right'; else if (k === GQ.picked) cls = 'wrong'; }
+        return `<button class="${cls}" data-act="gramPick" data-k="${k}" ${GQ.answered ? 'disabled' : ''}>${esc(c)}</button>`; }).join('')}</div>
+      ${GQ.answered ? `<div class="fb ${GQ.picked === g.a ? 'ok' : 'no'}" style="margin-top:12px">${GQ.picked === g.a ? '✅ 啱！' : '❌ 唔啱'}<br>${esc(g.why)}</div>
+        <button class="btn-primary btn-block" style="margin-top:10px" data-act="gramNext">下一題 →</button>` : ''}`;
+  }
+
+  // 改寫
+  let PP = { i: null, shown: false };
+  function paraHtml() {
+    if (PP.i == null) PP.i = hashStr(today() + 'p') % NE.paraphrase.length;
+    const p = NE.paraphrase[PP.i];
+    return `<p class="small muted">用唔同嘅字同句式講同一個意思。寫作開首段要改寫題目，閱讀答案亦成日係原文嘅同義改寫。</p>
+      <div class="card" style="border-top:6px solid #22b07d"><div class="small muted">改寫呢句：</div><div class="cue" style="margin-top:4px">${esc(p.src)}</div></div>
+      <div class="row" style="flex-wrap:nowrap;align-items:flex-start"><textarea id="paraIn" placeholder="用你自己嘅方法改寫…（可以撳 🎤 講）" style="min-height:90px">${esc(PP.typed || '')}</textarea>
+      <button class="speak" data-act="dictate" data-target="paraIn" data-lang="en">🎤</button></div>
+      <button class="btn-accent btn-block" style="margin-top:8px" data-act="aiPara">🤖 AI 評分我嘅改寫</button><div id="aiParaBox"></div>
+      ${PP.shown ? `<div class="card fade-in" style="margin-top:10px"><h3>參考改寫</h3>${p.m.map(x => `<p>• ${esc(x)}</p>`).join('')}
+        <h3 style="margin-top:8px">關鍵替換</h3>${p.k.map(([a, b]) => `<p class="small"><span class="pill">${esc(a)}</span> → <b>${esc(b)}</b></p>`).join('')}
+        <div class="note" style="margin-top:8px">💡 ${esc(p.tip)}</div></div>
+        <div class="grid2"><button class="btn-ghost" data-act="paraRate" data-v="0">😅 要再練</button><button class="btn-primary" data-act="paraRate" data-v="1">👍 我寫得似</button></div>`
+        : `<button class="btn-primary btn-block" style="margin-top:10px" data-act="paraShow">睇參考答案</button>`}`;
+  }
+
+  // ===== 講嘢轉文字（iPhone Safari 內置語音辨識，免費）=====
+  let DICT = null;
+  function dictateInto(el, lang, btn) {
+    if (DICT) { DICT.r.stop(); return; }
+    if (!SR) { toast('呢個瀏覽器唔支援，可以用 iPhone 鍵盤上面嘅 🎤 咪高峰輸入'); el.focus(); return; }
+    const r = new SR(); r.lang = lang; r.continuous = true; r.interimResults = true;
+    const base = el.value ? el.value.trim() + ' ' : '';
+    DICT = { r, btn };
+    if (btn) { btn.classList.add('playing'); btn.dataset.old = btn.innerHTML; btn.innerHTML = '⏹️'; }
+    r.onresult = e => { let txt = ''; for (const res of e.results) txt += res[0].transcript; el.value = base + txt; el.dispatchEvent(new Event('input', { bubbles: true })); };
+    r.onerror = e => { if (e.error !== 'aborted' && e.error !== 'no-speech') toast('語音辨識：' + e.error); };
+    r.onend = () => { if (btn) { btn.classList.remove('playing'); btn.innerHTML = btn.dataset.old || '🎤'; } DICT = null; };
+    try { r.start(); } catch (e) { DICT = null; toast('未能開始錄音'); }
+  }
+  function stopDictate() { if (DICT) { try { DICT.r.stop(); } catch (e) { /* 已停 */ } DICT = null; } }
+
+  // ===== AI 評分（Google Gemini 免費 API，key 只存喺呢部機）=====
+  const AI_KEY = 'ne_ai';
+  let AIC = {}; try { AIC = JSON.parse(localStorage.getItem(AI_KEY) || '{}') || {}; } catch (e) { AIC = {}; }
+  const saveAIC = () => { try { localStorage.setItem(AI_KEY, JSON.stringify(AIC)); } catch (e) { /* 冇得存 */ } };
+  const aiReady = () => !!AIC.key;
+  const AI_KIND = { essay: '寫作', speak: '口語', para: '改寫', say: '句子講法' };
+  const AI_PREF = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+  async function aiPickModels() {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': AIC.key } });
+    if (r.status === 400 || r.status === 401 || r.status === 403) throw new Error('API key 無效');
+    if (!r.ok) throw new Error('Gemini 回應 ' + r.status);
+    const names = ((await r.json()).models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', ''));
+    const flash = names.filter(n => /^gemini-[\d.]+-flash(-lite)?$/.test(n));
+    const ordered = AI_PREF.filter(n => names.includes(n)).concat(flash.filter(n => !AI_PREF.includes(n)).sort().reverse());
+    if (!ordered.length) throw new Error('搵唔到可用嘅 Flash 型號');
+    AIC.models = ordered.slice(0, 4); saveAIC(); return AIC.models;
+  }
+  async function aiCall(prompt) {
+    if (!aiReady()) throw new Error('未設定 AI（設定 → AI 評分）');
+    if (!navigator.onLine) throw new Error('要有網先用到 AI');
+    const models = AIC.models && AIC.models.length ? AIC.models : await aiPickModels();
+    let last = '';
+    for (const m of models) {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': AIC.key },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, responseMimeType: 'application/json' } })
+      });
+      if (r.status === 429) { last = '今日免費額度用完，聽日再試（或者等一分鐘）'; continue; }
+      if (r.status === 404) { last = '型號唔存在'; AIC.models = null; saveAIC(); continue; }
+      if (r.status === 400 || r.status === 401 || r.status === 403) throw new Error('API key 無效或冇權限');
+      if (!r.ok) { last = 'Gemini 回應 ' + r.status; continue; }
+      const j = await r.json();
+      const txt = (((j.candidates || [])[0] || {}).content || { parts: [] }).parts.map(p => p.text || '').join('');
+      try { const out = JSON.parse(txt.replace(/^```(json)?|```$/g, '').trim()); out._model = m; return out; } catch (e) { last = 'AI 回覆格式有問題，再試一次'; }
+    }
+    throw new Error(last || 'AI 暫時用唔到');
+  }
+  const AI_ROLE = 'You are a friendly, honest IELTS examiner and English tutor for a 23-year-old Hong Kong enrolled nurse aiming for IELTS band 6.0–6.5. Explanations must be in Traditional Chinese (Hong Kong style, simple and encouraging). Corrections and model answers must be in English. Be accurate about IELTS band descriptors; do not inflate scores. Reply with JSON only.';
+  const AI_PROMPTS = {
+    essay: (d) => `${AI_ROLE}
+Assess this IELTS Academic Writing Task ${d.task} response (minimum ${d.task === 2 ? 250 : 150} words; it has ${d.wc} words).
+Question: ${d.q}
+${d.extra || ''}
+Response:
+"""${d.text}"""
+Return JSON: {"band": overall band (number, 0.5 steps), "criteria": {"${d.task === 2 ? 'Task Response' : 'Task Achievement'}": band, "Coherence and Cohesion": band, "Lexical Resource": band, "Grammatical Range and Accuracy": band}, "summary": "2-3 sentences in Chinese", "strengths": ["Chinese", ...max 3], "improve": ["specific Chinese advice", ...max 4], "corrections": [{"wrong": "exact phrase from the text", "right": "corrected English", "why": "short Chinese reason"} ...max 8 most important], "better": "one improved version of her weakest paragraph in English"}`,
+    speak: (d) => `${AI_ROLE}
+This is a speech-to-text transcript of her spoken answer to IELTS Speaking Part ${d.part}. Speech recognition may contain small errors; ignore punctuation and obvious recognition mistakes. You cannot hear pronunciation, so do not score it.
+Question: ${d.q}
+Transcript: """${d.text}"""
+Return JSON: {"band": estimated band from fluency, vocabulary and grammar only (number, 0.5 steps), "criteria": {"Fluency and Coherence": band, "Lexical Resource": band, "Grammatical Range and Accuracy": band}, "summary": "Chinese", "strengths": ["Chinese" max 3], "improve": ["Chinese" max 3], "corrections": [{"wrong": "...", "right": "...", "why": "Chinese"} max 6], "better": "a natural band-7 answer to the same question in English, about ${d.part === 2 ? 180 : 60} words, using her ideas"}`,
+    para: (d) => `${AI_ROLE}
+She is practising paraphrasing for IELTS. Original: "${d.src}"
+Her paraphrase: "${d.text}"
+Return JSON: {"score": 0-10, "sameMeaning": true/false, "summary": "Chinese: does it keep the meaning, how different is the wording", "corrections": [{"wrong": "...", "right": "...", "why": "Chinese"} max 4], "better": "one strong paraphrase in English"}`,
+    say: (d) => `${AI_ROLE}
+Situation for a nurse in Hong Kong: "${d.ctx}". She wanted to say (Chinese): "${d.zh}". Model English: "${d.model}".
+What she said (speech-to-text or typed): "${d.text}"
+Is her sentence correct, natural and polite enough for a hospital? Other correct wordings are fine.
+Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "corrections": [{"wrong": "...", "right": "...", "why": "Chinese"} max 4], "better": "most natural version in English"}`
+  };
+  async function runAI(kind, data, boxId, ref) {
+    const box = document.getElementById(boxId); if (!box) return;
+    if (!aiReady()) { box.innerHTML = `<div class="note">🤖 未設定 AI。去 <a href="#settings">設定 → AI 評分</a> 貼上免費 Gemini key（Ben 會幫你）。</div>`; return; }
+    box.innerHTML = '<div class="card center"><span class="rec" style="background:var(--primary2)"></span> 🤖 AI 批改中…（約 5–20 秒）</div>';
+    try {
+      const res = await aiCall(AI_PROMPTS[kind](data));
+      logEv({ k: 'ai', kind, ref: ref || '', band: typeof res.band === 'number' ? res.band : null, score: typeof res.score === 'number' ? res.score : null, input: String(data.text).slice(0, 3000), res });
+      if (kind === 'essay' && S.drafts[ref]) S.drafts[ref].ai = { at: Date.now(), res };
+      logToday().ex += 3; save(); checkGoal();
+      const b = document.getElementById(boxId); if (b) b.innerHTML = aiResultHtml(res);
+      if ((res.band || 0) >= 6.5 || (res.score || 0) >= 8) confetti(60);
+    } catch (e) { const b = document.getElementById(boxId); if (b) b.innerHTML = `<div class="fb no">🤖 ${esc(e.message)}</div>`; }
+  }
+  function aiResultHtml(r) {
+    const head = typeof r.band === 'number' ? `<div class="score" style="font-size:44px">Band ${esc(r.band)}</div>` : typeof r.score === 'number' ? `<div class="score" style="font-size:44px">${esc(r.score)}/10</div>` : '';
+    const crit = r.criteria ? Object.entries(r.criteria).map(([k, v]) => `<div class="row between small" style="margin:3px 0"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('') : '';
+    const list = (t, xs) => xs && xs.length ? `<h3 style="margin-top:10px">${t}</h3>${xs.map(x => `<p class="small" style="margin:4px 0">• ${esc(x)}</p>`).join('')}` : '';
+    return `<div class="card fade-in" style="border-top:6px solid #8b5cf6"><div class="center">${head}</div>
+      ${r.summary ? `<p>${esc(r.summary)}</p>` : ''}${crit}
+      ${list('💪 做得好', r.strengths)}${list('🎯 點樣改進', r.improve)}
+      ${r.corrections && r.corrections.length ? `<h3 style="margin-top:10px">✏️ 改正</h3>${r.corrections.map(c => `<p class="small" style="margin:6px 0"><span style="color:var(--bad);text-decoration:line-through">${esc(c.wrong)}</span> → <b style="color:var(--good)">${esc(c.right)}</b><br><span class="muted">${esc(c.why)}</span></p>`).join('')}` : ''}
+      ${r.better ? `<h3 style="margin-top:10px">⭐ 參考寫法</h3><div class="ex small">${esc(r.better)} ${spk(r.better)}</div>` : ''}
+      <p class="small muted" style="margin-top:8px">AI 評分只供參考，同真考官可能有差距（±0.5–1）。</p></div>`;
+  }
+
+  // ===== 考試倒數 + 今日任務 =====
+  const WEEK_PLAN = {
+    1: [['📖 閱讀 1 篇', 'read', 1, 'read']],
+    2: [['🎧 聽力 1 段', 'listen', 1, 'listen'], ['✍️ 聽寫 5 句', 'dict', 5, 'dict']],
+    3: [['✍️ 寫作 1 篇', 'essay', 1, 'write']],
+    4: [['🎤 口語 2 題', 'speak', 2, 'speak'], ['🔁 改寫 3 句', 'para', 3, 'para']],
+    5: [['🧩 文法 10 題', 'gram', 10, 'gram']],
+    6: [['📖 閱讀 1 篇', 'read', 1, 'read'], ['🎧 聽力 1 段', 'listen', 1, 'listen']],
+    0: [['🎯 弱項特訓', 'quiz', 10, 'weak'], ['🎤 口語 1 題', 'speak', 1, 'speak']]
+  };
+  function todayCount(k) { const t = today(); return S.events.filter(e => e.k === k && fmt(new Date(e.t)) === t).length; }
+  function examCard() {
+    const s = S.settings; const t = today();
+    const days = s.examDate ? Math.round((new Date(s.examDate) - new Date(t)) / 864e5) : null;
+    const cardsDone = dueCount() === 0 && newLeftToday() === 0;
+    const tasks = [['📚 今日卡（溫習 + 新字）', null, 0, 'cards']].concat(WEEK_PLAN[new Date().getDay()]);
+    if (days != null && days >= 0 && days <= 14) tasks.push(['⚡ 衝刺：多做 1 篇閱讀', 'read', 2, 'read']);
+    const row = ([label, k, need, go]) => {
+      const done = go === 'cards' ? cardsDone : todayCount(k) >= need;
+      const prog = go === 'cards' ? '' : `<span class="small muted">${Math.min(todayCount(k), need)}/${need}</span>`;
+      const act = go === 'cards' ? 'data-act="startToday"' : go === 'weak' ? 'data-act="quiz" data-kind="weak"' : go === 'dict' ? 'data-act="goDict"' : `data-act="goIelts" data-tab="${go}"`;
+      return `<button class="btn-ghost btn-block" style="justify-content:space-between;margin-top:6px;${done ? 'opacity:.6' : ''}" ${act}><span>${done ? '✅' : '⬜'} ${esc(label)}</span>${prog}</button>`;
+    };
+    return `<div class="card" style="border-left:5px solid #3b82f6">
+      <div class="row between"><b>🗓️ 今日任務</b>${days != null ? `<span class="pill" style="background:var(--grad);color:#fff">${days > 0 ? 'IELTS 倒數 ' + days + ' 日' : days === 0 ? '今日考試！加油 💪' : '考完喇 🎉'}</span>` : `<a class="small" href="#settings">設定考試日期 →</a>`}</div>
+      <div class="small muted">目標 Band ${esc(s.target)} · ${s.examType === 'gt' ? 'General Training' : 'Academic'}</div>
+      ${tasks.map(row).join('')}</div>`;
+  }
+
+  // ===== 使用說明 =====
+  V.help = () => {
+    const sec = (icon, title, body, open) => `<details class="card tight" ${open ? 'open' : ''}><summary>${icon} ${title}</summary><div class="small" style="line-height:1.7">${body}</div></details>`;
+    return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#home">‹</a><h1 class="grow">📖 使用說明</h1></div>
+      <p class="muted small">呢個 app 幫你每日學醫護英文，同埋準備 IELTS（目標 6.0–6.5）。每日大約 15–20 分鐘就夠。</p>
+      ${sec('🚀', '第一次用：3 步設定', `
+        1. <b>加到主畫面</b>：Safari 撳「分享」→「加至主畫面」。咁樣用起嚟似 app，記錄亦唔會被清走。<br>
+        2. <b>設定</b>（首頁右上 ⚙️）：填你嘅英文名、每日目標、口音（IELTS 建議英式）、<b>IELTS 考試日期同目標分數</b>。<br>
+        3. 撳首頁「<b>開始今日學習</b>」，試做第一輪。`, true)}
+      ${sec('☀️', '每日應該做咩？', `
+        首頁有 <b>🗓️ 今日任務</b>，跟住做就得：<br>
+        • 每日：📚 今日卡（溫習 + 新字，約 10 分鐘）<br>
+        • 星期一：閱讀　星期二：聽力 + 聽寫　星期三：寫作　星期四：口語 + 改寫　星期五：文法　星期六：閱讀 + 聽力　星期日：弱項特訓 + 口語<br>
+        做完一項會自動打 ✅。完成每日目標會有彩紙 🎉，連續日數 🔥 會加。`)}
+      ${sec('📚', '學習卡點用？（唔好淨係睇！）', `
+        • 先睇英文，<b>喺格仔打中文意思</b>（或者撳 🎤 講），再撳「揭曉答案」，app 會話你啱唔啱。唔肯定可以撳「💡 中文提示」。<br>
+        • 「實用句子」字庫相反：先睇中文，<b>撳 🎤 用英文講出嚟</b>（或者打），揭答案會逐個字對，綠色 = 啱，紅色 = 漏咗／錯咗。仲可以撳「🤖 AI 睇下我講法啱唔啱」，因為唔同講法都可以啱。<br>
+        • 記住：<b>自己諗、自己講</b>先會記得，淨係睇答案好快會唔記得。<br>
+        • 揭咗之後<b>誠實揀</b>：唔記得（今日會再出）／難／記得／好易（會隔耐啲先再出）。<br>
+        • 🔊 聽讀音　🎤 跟讀（會話你讀得準唔準）　🔎 查字典　☆ 收藏　💌 對呢張卡有意見。`)}
+      ${sec('✏️', '測驗', `
+        「測驗」分頁：快速測驗、弱項特訓、串字、聽力、縮寫挑戰。<b>答錯嘅字會自動加入今日溫習</b>，所以錯咗唔緊要，錯咗先記得牢。`)}
+      ${sec('🎓', 'IELTS 練習', `
+        「IELTS」分頁：<br>
+        • 🎤 <b>口語</b>：Part 1/2/3 題目、計時、錄音（聽返自己）。仲可以撳「🎤 開始講」轉做文字，再撳「🤖 AI 評分」，會估 Band、改文法、俾參考答案。<br>
+        • ✍️ <b>寫作</b>：Task 1/2 題目，計時 + 字數 + 自動儲存草稿 + 結構建議。寫完撳「🤖 AI 批改」：估 Band（四項準則）、改錯、建議點改進。<br>
+        • 📖 <b>閱讀</b>：True/False/Not Given、填字、選擇題，交卷有解釋同估分。<br>
+        • 🎧 <b>聽力</b>：聽對話填表（真考試只播一次）＋ ✍️ 聽寫（聽一句打一句，練串字）。<br>
+        • 🧩 <b>文法</b>：香港人最常錯嘅文法，每題有中文解釋。<br>
+        • 🔁 <b>改寫</b>：用唔同字講同一個意思，寫作同閱讀都用到。寫完可以叫 🤖 AI 評分。<br>
+        • 📘 <b>字彙</b>：健康話題字、學術詞彙、常用搭配（collocation）。<br>
+        • 💡 <b>貼士</b>：評分準則、溫習方法、官方免費練習連結。<br>
+        估分只係按比例估算，題目少，只供參考。`)}
+      ${sec('🤖', 'AI 評分點設定？', `設定 → 「AI 評分」：貼上 Ben 俾你嘅 Gemini key，撳「儲存並測試」。見到 ✅ 就用得。<br>
+        • 免費版每日有限額，用完會提你聽日再試。<br>
+        • AI 分數只供參考（同真考官可能差 0.5–1 分），最有用係睇「改正」同「點樣改進」。<br>
+        • 唔好喺練習入面寫病人名或者私人資料。`)}
+      ${sec('⭐', '加自己嘅生字', `返工聽到唔識嘅字？撳首頁「加生字」，打英文（可以撳 Cambridge 字典或者 Google 翻譯查中文），儲存後會自動安排溫習。`)}
+      ${sec('📈', '睇進度同強弱項', `「進度」分頁：連續日數、已學／熟記字數、測驗準確率、12 星期熱圖、成就徽章，同埋 <b>🧭 強項同弱項</b>（按字庫同題型計）。`)}
+      ${sec('💌', '意見箱：想改咩話俾 Ben 知', `首頁「意見箱」或者每張卡嘅「💌 意見」：錯字、太難太易、想加咩功能都可以寫。Ben 會叫 Claude 睇你嘅意見同學習記錄，再改 app。回覆會喺意見箱顯示，首頁亦會有「📌 今期重點」。`)}
+      ${sec('☁️', '同步同備份', `• 設定 → 「同步俾 Ben 睇」：貼上 Ben 俾你嘅 token，學習記錄會自動上載去 Ben 嘅私人資料庫，佢先睇到你嘅強弱項。<br>
+        • 唔想同步：設定 → 「匯出備份」，將檔案傳俾 Ben。<br>
+        • 換機前一定要匯出備份。`)}
+      ${sec('⏰', '每日提醒', `設定 → 每日提醒：揀時間，撳「下載提醒」，加入 iPhone 日曆，每日到鐘會彈通知。`)}
+      <p class="small muted center">有新功能時，呢頁會一齊更新。</p>`;
   };
 
   // ===== 意見箱 =====
@@ -878,31 +1263,43 @@
         : `<button class="chip" data-act="quiz" data-kind="${esc(f.kind)}" ${f.deck ? `data-deck="${esc(f.deck)}"` : ''}>${esc(f.label)}</button>`).join('')}</div></div>`;
   }
   function insightCard() {
-    const I = insights(30);
-    if (!I.decks.length && !I.quizTypes.length) return `<div class="card small muted">做多幾次溫習同測驗（每個字庫最少 5 次），呢度就會顯示你嘅強項同弱項。</div>`;
+    const I = insights(30); const K = I.skills;
+    const skillRows = [['📖 閱讀', K.reading], ['🎧 聽力', K.listening], ['✍️ 聽寫', K.dictation], ['🗣️ 主動回想（講／打答案）', K.recall]].filter(x => x[1]);
+    const skillHtml = skillRows.length || K.grammar.length || K.aiBands.length ? `<h3 style="margin-top:10px">🎓 IELTS 技能</h3>
+      ${skillRows.map(([t, x]) => `<div class="row between small" style="margin:4px 0"><span>${t}（${x.n} 次）</span><b style="color:${x.pct >= 80 ? 'var(--good)' : x.pct >= 60 ? 'var(--warn)' : 'var(--bad)'}">${x.pct}%</b></div>`).join('')}
+      ${K.grammar.map(g => `<div class="row between small" style="margin:4px 0"><span>🧩 ${esc(g.name)}（${g.n} 題）</span><b style="color:${g.pct >= 80 ? 'var(--good)' : g.pct >= 60 ? 'var(--warn)' : 'var(--bad)'}">${g.pct}%</b></div>`).join('')}
+      ${K.aiBands.map(a => `<div class="row between small" style="margin:4px 0"><span>🤖 AI 評分：${esc(AI_KIND[a.kind] || a.kind)}（${a.n} 次）</span><b>Band ${a.avg}</b></div>`).join('')}` : '';
+    if (!I.decks.length && !I.quizTypes.length && !skillHtml) return `<div class="card small muted">做多幾次溫習同測驗（每個字庫最少 5 次），呢度就會顯示你嘅強項同弱項。</div>`;
     const row = (x, label) => `<div class="row between small" style="margin:4px 0"><span>${esc(label)}</span><b style="color:${x.pct >= 80 ? 'var(--good)' : x.pct >= 60 ? 'var(--warn)' : 'var(--bad)'}">${x.pct}%</b></div>`;
     return `<div class="card">
       ${I.strengths.length ? `<h3>💪 強項</h3>${I.strengths.map(x => row(x, x.name)).join('')}` : ''}
       ${I.weaknesses.length ? `<h3 style="margin-top:10px">🎯 要加強</h3>${I.weaknesses.map(x => row(x, x.name)).join('')}` : ''}
       ${I.quizTypes.length ? `<h3 style="margin-top:10px">✏️ 測驗題型</h3>${I.quizTypes.map(x => row(x, x.name + `（${x.n} 題）`)).join('')}` : ''}
+      ${skillHtml}
       ${I.pronunciation ? `<p class="small muted" style="margin-top:8px">🎤 跟讀 ${I.pronunciation.tries} 次，平均準確 ${I.pronunciation.avg}%</p>` : ''}
       <p class="small muted">最近 30 日 · 溫習評「記得／好易」同測驗答啱都計做啱</p></div>`;
   }
 
   // ===== 路由 =====
   function render() {
+    stopDictate();
     const raw = (location.hash || '#home').slice(1); const [r, arg] = raw.split('/');
     const route = V[r] ? r : 'home';
-    if (route !== 'quizrun' && route !== 'study') { if (window.speechSynthesis) speechSynthesis.cancel(); }
-    document.body.classList.toggle('focus', ['study', 'quizrun', 'write'].includes(route));
-    const tabFor = { deck: 'library', quizrun: 'quiz', write: 'ielts', settings: 'home', study: 'home', feedback: 'home' }[route] || route;
+    if (!['quizrun', 'study', 'listen', 'dict'].includes(route)) { if (window.speechSynthesis) speechSynthesis.cancel(); }
+    document.body.classList.toggle('focus', ['study', 'quizrun', 'write', 'read', 'listen', 'dict'].includes(route));
+    const tabFor = { deck: 'library', quizrun: 'quiz', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', settings: 'home', study: 'home', feedback: 'home', help: 'home' }[route] || route;
     document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabFor));
     $('#app').innerHTML = V[route](arg ? decodeURIComponent(arg) : undefined);
     after(route);
   }
   let lastRoute = '';
   function after(route) {
-    if (route !== lastRoute) { window.scrollTo(0, 0); if (lastRoute === 'ielts' || lastRoute === 'write') { stopTimer(); stopRecording(); } lastRoute = route; }
+    if (route !== lastRoute) {
+      window.scrollTo(0, 0);
+      if (['ielts', 'write', 'read'].includes(lastRoute) && !(lastRoute === 'ielts' && route === 'ielts')) { stopTimer(); stopRecording(); }
+      if (['listen', 'dict'].includes(lastRoute) && window.speechSynthesis) speechSynthesis.cancel();
+      lastRoute = route;
+    }
     requestAnimationFrame(() => document.querySelectorAll('.ring .fg').forEach(c => { c.style.strokeDashoffset = c.dataset.off; }));
     const as = $('#autoSpeak'); if (as && QZ && !QZ.answered) setTimeout(() => speak(as.dataset.text, as), 300);
     const si = $('#spellIn'); if (si) si.focus();
@@ -920,7 +1317,47 @@
     learnOne: el => { closeModal(); startSession({ ids: [el.dataset.id] }); },
     studyDeck: el => startSession({ deck: el.dataset.deck, newCount: 10 }),
     hint: () => { SES.hint = true; render(); },
-    reveal: () => { SES.revealed = true; SES.anim = 'flip'; render(); },
+    reveal: () => {
+      stopDictate();
+      const inp = $('#recallIn'); const v = inp ? inp.value.trim() : '';
+      SES.rec = null;
+      if (v) {
+        const c = BY[SES.queue[SES.i]];
+        if (deckOf(c).say) { const m = lcsMark(fill(c.en), v); SES.rec = { v, m, sc: m.acc }; }
+        else {
+          const zh = (c.zh.match(/[一-鿿]/g) || []); const typed = v;
+          const hit = zh.filter(ch => typed.includes(ch)).length;
+          SES.rec = { v, sc: zh.length ? hit / zh.length : 0 };
+        }
+        logEv({ k: 'recall', id: c.id, sc: Math.round(SES.rec.sc * 100) / 100, a: v.slice(0, 160) }); save();
+      }
+      SES.typed = ''; SES.revealed = true; SES.anim = 'flip'; render();
+    },
+    dictate: el => { const t = document.getElementById(el.dataset.target); if (t) dictateInto(t, el.dataset.lang === 'zh' ? 'zh-HK' : S.settings.accent, el); },
+    aiSpeak: () => {
+      const text = ($('#spkText').value || '').trim(); if (countWords(text) < 5) return toast('講多少少先（最少一兩句）');
+      const list = NE.ielts.speaking[IEL.part]; const it = list[(IEL.idx[IEL.part] || 0) % list.length];
+      const q = IEL.part === 2 ? it.q + ' You should say: ' + it.b.join(', ') : it;
+      stopDictate(); runAI('speak', { part: IEL.part, q, text }, 'aiSpkBox', 'p' + IEL.part + ':' + (IEL.part === 2 ? it.q : it).slice(0, 60));
+    },
+    aiEssay: el => {
+      const id = el.dataset.id; const w = NE.ielts.writing.find(x => x.id === id); const d = S.drafts[id] || { text: '' };
+      const wc = countWords(d.text); if (wc < 40) return toast('寫多啲先（最少一段）先批改');
+      const extra = w.table ? 'Data: ' + [w.table.head].concat(w.table.rows).map(r => r.join(' | ')).join('; ') : w.steps ? 'Steps: ' + w.steps.join(' → ') : '';
+      runAI('essay', { task: w.task, q: w.q, extra, text: d.text, wc }, 'aiEssayBox', id);
+    },
+    aiPara: () => {
+      const v = ($('#paraIn').value || '').trim(); if (!v) return toast('寫低你嘅改寫先');
+      PP.typed = v; runAI('para', { src: NE.paraphrase[PP.i].src, text: v }, 'aiParaBox', 'para' + PP.i);
+    },
+    aiSave: () => {
+      const k = ($('#aiKeyIn').value || '').trim(); if (!k && !AIC.key) return toast('請貼上 Gemini API key');
+      if (k) { AIC.key = k; AIC.models = null; } saveAIC();
+      const out = $('#aiStatus'); out.textContent = '測試緊…';
+      aiPickModels().then(ms => { out.textContent = '✅ 已連接：' + ms[0]; toast('🤖 AI 已連接'); }).catch(e => { out.textContent = '⚠️ ' + e.message; });
+    },
+    aiRemove: () => { if (!confirm('喺呢部機移除 AI key？')) return; AIC = {}; saveAIC(); render(); },
+    aiSay: el => { const c = BY[el.dataset.id]; runAI('say', { ctx: c.def, zh: fill(c.zh), model: fill(c.en), text: SES.rec.v }, 'aiSayBox', c.id); },
     showZh: () => { SES.showZh = true; render(); },
     grade: el => grade(Number(el.dataset.g)),
     exitStudy: () => { SES = null; location.hash = '#home'; },
@@ -946,6 +1383,63 @@
       S.custom = S.custom.filter(c => c.id !== id); delete S.cards[id]; delete S.stars[id];
       save(); rebuild(); closeModal(); render(); toast('已刪除');
     },
+    goIelts: el => { IEL.tab = el.dataset.tab; GQ = null; if (location.hash === '#ielts') render(); else location.hash = '#ielts'; },
+    goDict: () => { location.hash = '#dict'; },
+    rdAns: el => { RD.ans[el.dataset.i] = el.dataset.v; render(); },
+    rdSubmit: () => {
+      const P = NE.reading.find(r => r.id === RD.id);
+      const blank = P.qs.filter((q, i) => RD.ans[i] == null || RD.ans[i] === '').length;
+      if (blank && !confirm(`仲有 ${blank} 題未答，交卷？`)) return;
+      RD.res = P.qs.map((q, i) => ({ ok: q.t === 'gap' ? ansOk(RD.ans[i], q.a) : String(RD.ans[i]) === String(q.a) }));
+      RD.score = RD.res.filter(r => r.ok).length; RD.done = true; stopTimer();
+      const types = {}; P.qs.forEach((q, i) => { const x = types[q.t] || (types[q.t] = [0, 0]); x[1]++; if (RD.res[i].ok) x[0]++; });
+      logEv({ k: 'read', id: P.id, sc: RD.score, n: P.qs.length, types, wrong: RD.res.map((r, i) => r.ok ? null : i).filter(x => x != null) });
+      logToday().ex += 5; save(); checkGoal(); render(); window.scrollTo(0, 0);
+      if (RD.score / P.qs.length >= .8) confetti();
+    },
+    rdReset: () => { RD = null; render(); },
+    lsPlay: el => playLines(NE.listening.find(r => r.id === LS.id).lines, el),
+    lsStop: () => { if (window.speechSynthesis) speechSynthesis.cancel(); const b = $('#lsPlayBtn'); if (b) b.classList.remove('playing'); },
+    lsSubmit: () => {
+      const P = NE.listening.find(r => r.id === LS.id);
+      LS.res = P.qs.map((q, i) => ({ ok: ansOk(LS.ans[i], q.a) }));
+      LS.score = LS.res.filter(r => r.ok).length; LS.done = true; A.lsStop();
+      logEv({ k: 'listen', id: P.id, sc: LS.score, n: P.qs.length, wrong: P.qs.map((q, i) => LS.res[i].ok ? null : { i, a: LS.ans[i] || '' }).filter(Boolean) });
+      logToday().ex += 5; save(); checkGoal(); render(); window.scrollTo(0, 0);
+      if (LS.score / P.qs.length >= .8) confetti();
+    },
+    lsReset: () => { LS = null; render(); },
+    dcPlay: el => speak(DC.text, el),
+    dcSlow: () => speak(DC.text, null, 0.65),
+    dcCheck: () => {
+      const v = ($('#dcIn').value || '').trim(); if (!v) return toast('聽完打低先對答案');
+      DC.typed = v; DC.m = lcsMark(DC.text, v); DC.done = true; DC.count++;
+      logEv({ k: 'dict', tx: DC.text.slice(0, 100), a: v.slice(0, 100), acc: Math.round(DC.m.acc * 100) / 100 });
+      logToday().ex += 1; save(); checkGoal(); render();
+    },
+    dcNext: () => { newDict(); render(); setTimeout(() => { const b = document.querySelector('[data-act=dcPlay]'); if (b) speak(DC.text, b); }, 300); },
+    gramStart: el => {
+      const cat = el.dataset.cat || '';
+      const idx = NE.grammar.map((g, i) => i).filter(i => !cat || NE.grammar[i].cat === cat);
+      GQ = { qs: shuffle(idx).slice(0, 10), i: 0, score: 0, answered: false, cat, log: [] }; IEL.tab = 'gram';
+      if (location.hash !== '#ielts') location.hash = '#ielts'; else render();
+    },
+    gramPick: el => {
+      const k = Number(el.dataset.k), gi = GQ.qs[GQ.i], ok = k === NE.grammar[gi].a;
+      GQ.answered = true; GQ.picked = k; if (ok) GQ.score++; GQ.log.push({ g: gi, ok });
+      logEv({ k: 'gram', g: gi, cat: NE.grammar[gi].cat, ok: ok ? 1 : 0, a: NE.grammar[gi].c[k] });
+      logToday().ex += 1; save(); checkGoal(); render();
+      if (!ok && navigator.vibrate) navigator.vibrate(80);
+    },
+    gramNext: () => { GQ.i++; GQ.answered = false; render(); if (GQ.i >= GQ.qs.length && GQ.score >= 8) confetti(); },
+    gramExit: () => { GQ = null; render(); },
+    paraShow: () => { const v = ($('#paraIn').value || '').trim(); if (!v) { $('#paraIn').classList.add('shake'); return toast('試下自己寫先 ✍️'); } PP.typed = v; PP.shown = true; render(); const t = $('#paraIn'); if (t) t.value = v; },
+    paraRate: el => {
+      logEv({ k: 'para', i: PP.i, self: Number(el.dataset.v), a: (PP.typed || '').slice(0, 160) });
+      logToday().ex += 2; save(); checkGoal();
+      PP = { i: (PP.i + 1) % NE.paraphrase.length, shown: false }; render(); toast(el.dataset.v === '1' ? '👍 好！下一句' : '💪 繼續練');
+    },
+    hideWelcome: () => { S.settings.seenHelp = true; save(); render(); },
     openFb: el => openModal(feedbackForm(el.dataset.ctx || '')),
     fbCat: el => { el.parentElement.querySelectorAll('.chip').forEach(b => b.classList.toggle('on', b === el)); },
     fbSend: el => {
@@ -978,7 +1472,7 @@
     nextQ: () => { QZ.i++; QZ.answered = false; QZ.hint = false; QZ.typed = null; render(); },
     ieltsTab: el => { IEL.tab = el.dataset.tab; stopTimer(); stopRecording(); render(); },
     part: el => { IEL.part = Number(el.dataset.p); stopTimer(); render(); },
-    nextSpeak: () => { IEL.idx[IEL.part] = (IEL.idx[IEL.part] || 0) + 1 + Math.floor(Math.random() * 3); stopTimer(); stopRecording(); render(); },
+    nextSpeak: () => { IEL.spk = ''; IEL.idx[IEL.part] = (IEL.idx[IEL.part] || 0) + 1 + Math.floor(Math.random() * 3); stopTimer(); stopRecording(); render(); },
     task: el => { IEL.task = Number(el.dataset.t); render(); },
     tgo: el => startTimer(Number(el.dataset.s), '作答中…'),
     p2go: () => startTimer(60, '準備時間（寫低關鍵字）', () => { toast('🎤 開始講！2 分鐘'); startTimer(120, '講緊…（最少講夠 1 分鐘）'); }),
@@ -1037,6 +1531,12 @@
       $('#wc').textContent = wc + ' / ' + (w.task === 2 ? 250 : 150) + ' 字'; clearTimeout(A._st); A._st = setTimeout(save, 500);
     }
     if (t.dataset.set === 'rate') $('#rateV').textContent = t.value;
+    if (t.dataset.rq != null && RD) RD.ans[t.dataset.rq] = t.value;
+    if (t.dataset.lq != null && LS) LS.ans[t.dataset.lq] = t.value;
+    if (t.id === 'dcIn' && DC) DC.typed = t.value;
+    if (t.id === 'recallIn' && SES) SES.typed = t.value;
+    if (t.id === 'spkText') IEL.spk = t.value;
+    if (t.id === 'paraIn') PP.typed = t.value;
   });
   document.addEventListener('change', e => {
     const t = e.target;
@@ -1076,5 +1576,6 @@
   // ===== 啟動 =====
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if (syncReady()) setTimeout(() => syncNow(false), 2000);
   render();
 })();

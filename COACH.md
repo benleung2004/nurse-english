@@ -20,6 +20,12 @@ mkdir -p logs && gh api repos/benleung2004/nurse-english-data/contents/data/prog
    - `say`：跟讀 `tx` 目標、`h` 語音辨識聽到嘅、`sc` 0–1
    - `speak`：IELTS 口語 `p` Part、`q` 題目、`rec` 有冇錄音
    - `essay`：`id` 題目、`wc` 字數
+   - `recall`：學習卡揭答案前佢講／打嘅答案（`a`）同相似度 `sc`
+   - `read`／`listen`：`id` 練習、`sc`/`n` 分數、`wrong` 錯題（聽力含佢填咗咩）、閱讀 `types` 各題型分數
+   - `dict`：聽寫 `tx` 原句、`a` 佢打咗咩、`acc`
+   - `gram`：文法 `g`（`NE.grammar` index）、`cat`、`ok`、`a` 揀咗咩
+   - `para`：改寫 `a` 佢寫咗咩、`self` 自評
+   - `ai`：Gemini 評分 `kind` essay/speak/para/say、`input` 佢原文（口語係語音轉文字）、`band`／`score`、`res` 完整回覆（改正、建議）。**睇佢嘅口語同寫作原文就喺呢度**，可以核對 AI 評分合唔合理
 4. `drafts`：IELTS 作文全文（`text`、`done` 完成日期）→ 可以按 IELTS 四項準則批改，估 band，列出常犯文法錯誤。
 5. `log`（每日 n 新字／r 溫習／qt 測驗題數／q 答啱／ex 口語寫作分、`goalHit`）、`cards`（每張卡 SRS：`i` 間隔日數、`l` 唔記得次數、`due`）、`settings`、`custom`（佢自己加嘅生字 = 工作上遇到嘅字，好有參考價值）。
 
@@ -38,14 +44,21 @@ mkdir -p logs && gh api repos/benleung2004/nurse-english-data/contents/data/prog
   - `plan.focus`：`{ label, act: 'quiz', kind: 'spell'|'listen'|'abbr'|'weak'|'learned'|'all' }` 或 `{ label, act: 'quiz', kind: 'deck', deck: '<deck id>' }` 或 `{ label, act: 'deck', deck: '<deck id>' }`
   - `replies`：`{ '<feedback id>': '回覆內容' }`（佢喺意見箱見到）
 - **內容**：錯字、中文唔啱、加新字／新句 → `js/data/*.js`（每行 `[英文, 中文, 英文解釋, 例句, 例句中文, 中文提示]`）。佢自己加嘅常見生字可以考慮加入正式字庫。**唔好改現有卡嘅英文（`en`）**，因為卡 id = 字庫 + 英文，改咗佢嘅學習記錄會斷。
-- **IELTS 題目** → `js/data/ielts.js`
+- **IELTS 題目** → `js/data/ielts.js`（口語、寫作）；閱讀、聽力、文法、改寫、collocation → `js/data/practice.js`。佢弱嘅文法類別可以加多啲題；閱讀／聽力每篇做完可以加新篇（原創，唔好抄官方真題）
+- **AI 評分提示詞** → `js/app.js` 嘅 `AI_PROMPTS`；型號自動揀（`AI_PREF`）
 - **難度**：新字數量、每日目標係佢自己喺設定改，唔好喺 code 強制改；可以喺 `plan.message` 建議。
 - **功能**：`js/app.js`
 
 ## 5. 改完
+0. **加咗或者改咗功能，一定要同時更新使用說明**：`js/app.js` 嘅 `V.help`（佢喺 app 首頁 ❓ 睇到）
 1. `sw.js` 嘅 `CACHE_VERSION` +1
 2. `node --check js/app.js`，再用內置瀏覽器 preview（launch.json 嘅 `nurse-english`，port 8796）手機尺寸檢查
 3. Ben 批准先 commit / push（GitHub Pages 約 1 分鐘更新）
+
+## 未做（等 Ben 決定）
+- 完整模擬考（40 題閱讀／聽力計時）：要寫大量原創內容
+- 真人錄音聽力：而家用手機 TTS 讀，同真考試聲音唔同
+- 發音評分：AI 只睇到語音轉文字，評唔到發音
 
 ## 私隱
 - `logs/` 已寫入 `.gitignore`，**唔好上載**；作文同意見只可以喺本機睇

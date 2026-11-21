@@ -65,7 +65,7 @@ NE.deck('ielts-awl', 'IELTS: Academic words', 'IELTS 學術詞彙', 'ielts', '�
   ["detrimental", "有害的", "causing harm", "Lack of sleep is detrimental to health.", "缺乏睡眠對健康有害。"]
 ]);
 
-NE.deck('ielts-speak', 'IELTS: Speaking phrases', 'IELTS 口語實用句', 'ielts', '🗣️', { say: true }, [
+NE.deck('ielts-speak', 'IELTS: Speaking phrases', 'IELTS 口語基本句', 'ielts', '🗣️', { say: true }, [
   ["That's an interesting question.", "這是個有趣的問題。", "Buying time to think"],
   ["To be honest, I've never really thought about it, but…", "老實說，我從來沒有認真想過，但……", "When you don't know what to say"],
   ["I'd say that…", "我會說……", "Giving an opinion (softer than I think)"],

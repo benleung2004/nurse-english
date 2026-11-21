@@ -16,7 +16,8 @@
     'ph-handover': '#7c3aed', 'ph-family': '#ff8a3d', 'ielts-health': '#16a34a', 'ielts-awl': '#2563eb',
     'ielts-speak': '#db2777', mine: '#f59e0b',
     'adv-assess': '#0d9488', 'adv-proc': '#0284c7', 'adv-pharm': '#e11d48', 'adv-cond': '#7c3aed', 'adv-safety': '#ea580c',
-    'adv-geri': '#65a30d', 'ph-ward': '#0891b2', 'ph-team': '#c026d3'
+    'adv-geri': '#65a30d', 'ph-ward': '#0891b2', 'ph-team': '#c026d3',
+    'ielts-speak7': '#be185d', 'ielts-write7': '#4f46e5', 'ielts-topics': '#059669'
   };
   const CATS = [['medical', '🩺 醫護字彙'], ['talk', '💬 實用句子（中→英）'], ['ielts', '🎓 IELTS'], ['mine', '⭐ 我的生字']];
   const QUOTES = [
@@ -269,7 +270,18 @@
     speechSynthesis.speak(u);
   }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const norm = s => fill(s).toLowerCase().replace(/\(.*?\)/g, '').replace(/[^a-z0-9' ]/g, ' ').split(/\s+/).filter(Boolean);
+  // iPhone 打字／語音會用彎引號 ’，要先統一，否則 That’s 會被拆開計錯
+  const norm = s => fill(s).toLowerCase().replace(/[\u2018\u2019\u02BC`´]/g, "'").replace(/\(.*?\)/g, '').replace(/[^a-z0-9' ]/g, ' ').replace(/(^|\s)'|'(?=\s|$)/g, ' ').split(/\s+/).filter(Boolean).flatMap(unContract);
+  // 縮寫同全寫當一樣：that's = that is、don't = do not（語音辨識有時會寫全寫）
+  function unContract(w) {
+    const x = { "can't": 'can not', cannot: 'can not', "won't": 'will not', "shan't": 'shall not', "let's": 'let us' }[w];
+    if (x) return x.split(' ');
+    let m;
+    if ((m = w.match(/^(.+)n't$/))) return [m[1], 'not'];
+    if ((m = w.match(/^(.+)'(re|ll|ve|m|d)$/))) return [m[1], { re: 'are', ll: 'will', ve: 'have', m: 'am', d: 'would' }[m[2]]];
+    if ((m = w.match(/^(it|that|he|she|what|there|here|who|where|how|this)'s$/))) return [m[1], 'is'];
+    return [w];
+  }
   function practiceSay(target, out) {
     if (!SR) { out.innerHTML = '<span class="muted">呢個瀏覽器唔支援語音辨識（iPhone 請用 Safari），可以撳 🔊 跟住讀。</span>'; return; }
     const r = new SR(); r.lang = S.settings.accent; r.interimResults = false; r.maxAlternatives = 3;
@@ -482,7 +494,7 @@
       const R = SES.rec;
       recallRes = R.m
         ? `<div class="fb ${R.sc >= .85 ? 'ok' : 'no'} small"><b>你講：</b>${esc(R.v)}<br><b>${Math.round(R.sc * 100)}%</b>　${R.m.words.map((w, i) => `<span style="${R.m.hit.has(i) ? 'color:var(--good)' : 'color:var(--bad);text-decoration:underline;font-weight:800'}">${esc(w)}</span>`).join(' ')}
-           <div class="row" style="margin-top:6px"><button class="chip" data-act="aiSay" data-id="${esc(c.id)}">🤖 AI 睇下我講法啱唔啱</button></div></div><div id="aiSayBox"></div>`
+           ${R.sc >= .95 ? '<div style="margin-top:6px"><b>✅ 完全正確！</b></div></div>' : `<div class="row" style="margin-top:6px"><button class="chip" data-act="aiSay" data-id="${esc(c.id)}">🤖 我講法唔同，問 AI 啱唔啱</button></div></div><div id="aiSayBox"></div>`}`
         : `<div class="fb ${R.sc >= .6 ? 'ok' : 'no'} small"><b>你答：</b>${esc(R.v)}　→　${R.sc >= .6 ? '✅ 接近' : '🤔 再睇清楚'}（${Math.round(R.sc * 100)}%）</div>`;
     }
     if (dk.say) {
@@ -1083,25 +1095,55 @@
   const AI_KIND = { essay: '寫作', speak: '口語', para: '改寫', say: '句子講法' };
   const AI_PREF = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
   async function aiPickModels() {
-    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': AIC.key } });
+    const r = await fetchT('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': AIC.key } }, 8000);
     if (r.status === 400 || r.status === 401 || r.status === 403) throw new Error('API key 無效');
     if (!r.ok) throw new Error('Gemini 回應 ' + r.status);
     const names = ((await r.json()).models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace('models/', ''));
     const flash = names.filter(n => /^gemini-[\d.]+-flash(-lite)?$/.test(n));
     const ordered = AI_PREF.filter(n => names.includes(n)).concat(flash.filter(n => !AI_PREF.includes(n)).sort().reverse());
     if (!ordered.length) throw new Error('搵唔到可用嘅 Flash 型號');
-    AIC.models = ordered.slice(0, 4); saveAIC(); return AIC.models;
+    AIC.models = ordered.slice(0, 6); saveAIC(); return AIC.models;
   }
-  async function aiCall(prompt) {
+  // fetch 加超時：之前冇超時，網絡或者型號慢就會一直等
+  async function fetchT(url, opts, ms) {
+    const ac = new AbortController(); const t = setTimeout(() => ac.abort(), ms);
+    try { return await fetch(url, Object.assign({}, opts, { signal: ac.signal })); }
+    catch (e) { throw e.name === 'AbortError' ? Object.assign(new Error('timeout'), { timeout: true }) : e; }
+    finally { clearTimeout(t); }
+  }
+  // 短題（句子、改寫）要快：用 Lite 型號、唔開「思考」、限制長度
+  const AI_LIMIT = { say: { ms: 10000, tok: 500, fast: true }, para: { ms: 10000, tok: 600, fast: true }, speak: { ms: 30000, tok: 1500 }, essay: { ms: 60000, tok: 3000 } };
+  function thinkCfg(m, fast) {
+    if (/^gemini-2\.5-flash/.test(m)) return { thinkingBudget: 0 };
+    if (/^gemini-3/.test(m)) return { thinkingLevel: fast ? 'minimal' : 'low' };
+    return null;
+  }
+  async function aiCall(prompt, kind) {
     if (!aiReady()) throw new Error('未設定 AI（設定 → AI 評分）');
     if (!navigator.onLine) throw new Error('要有網先用到 AI');
-    const models = AIC.models && AIC.models.length ? AIC.models : await aiPickModels();
+    const L = AI_LIMIT[kind] || AI_LIMIT.speak;
+    let models = AIC.models && AIC.models.length ? AIC.models : await aiPickModels();
+    if (L.fast) models = models.filter(m => /lite/.test(m)).concat(models.filter(m => !/lite/.test(m)));
     let last = '';
     for (const m of models) {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': AIC.key },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, responseMimeType: 'application/json' } })
-      });
+      const gen = { temperature: 0.3, responseMimeType: 'application/json', maxOutputTokens: L.tok };
+      let tc = AIC.noThink && AIC.noThink[m] ? null : thinkCfg(m, L.fast);
+      let r;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: tc ? Object.assign({ thinkingConfig: tc }, gen) : gen };
+        try {
+          r = await fetchT(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': AIC.key }, body: JSON.stringify(body)
+          }, L.ms);
+        } catch (e) { r = null; last = e.timeout ? 'AI 太慢（超時），試下再撳一次' : '網絡有問題'; break; }
+        if (r.status === 400 && tc) {
+          const t = await r.text();
+          if (/API_KEY|api key/i.test(t)) throw new Error('API key 無效或冇權限');
+          AIC.noThink = Object.assign({}, AIC.noThink, { [m]: 1 }); saveAIC(); tc = null; continue; // 呢個型號唔支援思考設定，唔加再試
+        }
+        break;
+      }
+      if (!r) continue;
       if (r.status === 429) { last = '今日免費額度用完，聽日再試（或者等一分鐘）'; continue; }
       if (r.status === 404) { last = '型號唔存在'; AIC.models = null; saveAIC(); continue; }
       if (r.status === 400 || r.status === 401 || r.status === 403) throw new Error('API key 無效或冇權限');
@@ -1139,9 +1181,11 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
   async function runAI(kind, data, boxId, ref) {
     const box = document.getElementById(boxId); if (!box) return;
     if (!aiReady()) { box.innerHTML = `<div class="note">🤖 未設定 AI。去 <a href="#settings">設定 → AI 評分</a> 貼上免費 Gemini key（Ben 會幫你）。</div>`; return; }
-    box.innerHTML = '<div class="card center"><span class="rec" style="background:var(--primary2)"></span> 🤖 AI 批改中…（約 5–20 秒）</div>';
+    const t0 = Date.now(); const fastK = (AI_LIMIT[kind] || {}).fast;
+    box.innerHTML = `<div class="card center"><span class="rec" style="background:var(--primary2)"></span> 🤖 AI 批改中… <b id="${boxId}T">0</b> 秒（${fastK ? '通常 2–5 秒' : '通常 5–20 秒'}）</div>`;
+    const tick = setInterval(() => { const el = document.getElementById(boxId + 'T'); if (el) el.textContent = Math.round((Date.now() - t0) / 1000); else clearInterval(tick); }, 500);
     try {
-      const res = await aiCall(AI_PROMPTS[kind](data));
+      const res = await aiCall(AI_PROMPTS[kind](data), kind).finally(() => clearInterval(tick));
       logEv({ k: 'ai', kind, ref: ref || '', band: typeof res.band === 'number' ? res.band : null, score: typeof res.score === 'number' ? res.score : null, input: String(data.text).slice(0, 3000), res });
       if (kind === 'essay' && S.drafts[ref]) S.drafts[ref].ai = { at: Date.now(), res };
       logToday().ex += 3; save(); checkGoal();
@@ -1221,11 +1265,13 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 🎧 <b>聽力</b>：聽對話填表（真考試只播一次）＋ ✍️ 聽寫（聽一句打一句，練串字）。<br>
         • 🧩 <b>文法</b>：香港人最常錯嘅文法，每題有中文解釋。<br>
         • 🔁 <b>改寫</b>：用唔同字講同一個意思，寫作同閱讀都用到。寫完可以叫 🤖 AI 評分。<br>
-        • 📘 <b>字彙</b>：健康話題字、學術詞彙、常用搭配（collocation）。<br>
+        • 📘 <b>字彙</b>：健康話題字、學術詞彙、常用搭配，同埋 <b>Band 7 程度</b>：🎙️ 口語高分表達、🖋️ 寫作高分句型、🌏 話題字彙（教育、環境、科技、工作、城市、罪案、文化）。真考試唔止考健康，所以每個話題都要識。<br>
         • 💡 <b>貼士</b>：評分準則、溫習方法、官方免費練習連結。<br>
-        估分只係按比例估算，題目少，只供參考。`)}
+        • 口語、寫作題目包括教育、環境、科技、工作、城市等常考話題。<br>
+        估分只係按比例估算，題目少，只供參考。題目係按 IELTS 官方題型原創，唔係真題。`)}
       ${sec('🤖', 'AI 評分點設定？', `設定 → 「AI 評分」：貼上 Ben 俾你嘅 Gemini key，撳「儲存並測試」。見到 ✅ 就用得。<br>
         • 免費版每日有限額，用完會提你聽日再試。<br>
+        • 句子卡講啱咗會直接顯示「✅ 完全正確」，唔使用 AI；講法唔同先撳 🤖 問 AI（通常 2–5 秒）。超過 10 秒會自動停，再撳一次就得。<br>
         • AI 分數只供參考（同真考官可能差 0.5–1 分），最有用係睇「改正」同「點樣改進」。<br>
         • 唔好喺練習入面寫病人名或者私人資料。`)}
       ${sec('⭐', '加自己嘅生字', `返工聽到唔識嘅字？撳首頁「加生字」，打英文（可以撳 Cambridge 字典或者 Google 翻譯查中文），儲存後會自動安排溫習。`)}

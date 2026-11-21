@@ -3,12 +3,14 @@
 NE.coach = {
   updated: '2026-11-21',
   plan: {
-    message: '加咗 263 張進階卡：臨床評估、進階程序、藥理、進階疾病、感染控制、長者護理，仲有病房日常句同同事溝通句。基本字太易嘅話，先由呢幾個字庫開始！學習卡依家係 4 揀 1，快好多 💪',
+    message: '加咗 263 張進階卡：臨床評估、進階程序、藥理、進階疾病、感染控制、長者護理，仲有病房日常句同同事溝通句。基本字太易嘅話，先由呢幾個字庫開始！IELTS 亦加咗 Band 7 程度嘅口語、寫作句型同各話題字彙。學習卡依家係 4 揀 1，快好多 💪',
     // 例：{ label: '串字練習 10 題', act: 'quiz', kind: 'spell' } 或 { label: '溫藥物字庫', act: 'deck', deck: 'meds' }
     focus: [
       { label: '🔍 臨床評估（進階）', act: 'deck', deck: 'adv-assess' },
       { label: '⚗️ 藥理', act: 'deck', deck: 'adv-pharm' },
-      { label: '🏨 病房日常句子', act: 'deck', deck: 'ph-ward' }
+      { label: '🏨 病房日常句子', act: 'deck', deck: 'ph-ward' },
+      { label: '🎙️ IELTS 口語高分表達', act: 'deck', deck: 'ielts-speak7' },
+      { label: '🌏 IELTS 話題字彙', act: 'deck', deck: 'ielts-topics' }
     ]
   },
   replies: {}

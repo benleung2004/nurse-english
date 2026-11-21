@@ -1,0 +1,166 @@
+// IELTS band 6.5–7+ 程度內容（原創，按 IELTS 官方題型同評分準則設計，唔係抄真題）
+// 真 IELTS 唔止考健康題，所以呢度加咗教育、環境、科技、工作、城市等常考話題
+
+NE.deck('ielts-speak7', 'IELTS: Band 7 speaking', 'IELTS 口語高分表達', 'ielts', '🎙️', { say: true }, [
+  ['It\'s not something I\'ve given much thought to, but off the top of my head, I\'d say…', '我冇點諗過呢樣嘢，不過一時諗到嘅話，我會話……', 'Buying time naturally on an unfamiliar topic (Part 3).', '', '', 'off the top of my head = 一時諗到'],
+  ['It\'s a bit of a double-edged sword.', '呢樣嘢有好有壞（雙刃劍）。', 'Showing a balanced view.', '', '', 'idiom，考官加分'],
+  ['I\'d imagine that most people would agree, but personally…', '我估大部分人都會同意，不過我自己就……', 'Contrasting general opinion with your own.', '', '', ''],
+  ['The main reason, I think, is that…, and on top of that…', '我覺得主要原因係……，除此之外……', 'Giving a reason plus an extra point.', '', '', 'on top of that = 再加上'],
+  ['That\'s largely down to the fact that…', '呢個主要係因為……', 'Explaining a cause.', '', '', 'be down to = 歸因於'],
+  ['Take my own job, for instance. As a nurse, I…', '就以我份工為例，做護士我……', 'Giving a personal example.', '', '', '用自己經驗＝內容具體'],
+  ['There\'s been a noticeable shift towards…', '而家明顯多咗人轉向……', 'Describing a trend.', '', '', ''],
+  ['Compared with my parents\' generation, young people nowadays tend to…', '同我父母嗰代比，而家後生仔傾向……', 'Comparing past and present (Part 3).', '', '', 'tend to = 傾向'],
+  ['If I\'d had the chance, I would have studied abroad.', '如果我當時有機會，我會去咗外國讀書。', 'Third conditional about the past.', '', '', '文法範圍加分：第三條件句'],
+  ['What really struck me was how calm everyone stayed.', '最令我印象深刻嘅係大家都好冷靜。', 'Cleft sentence for emphasis (Part 2).', '', '', 'What … was … 分裂句'],
+  ['Not only does it save time, but it also reduces mistakes.', '佢唔單止慳時間，仲可以減少出錯。', 'Inversion for emphasis.', '', '', 'Not only + 倒裝'],
+  ['I\'m not entirely sure, but I suppose it depends on how you look at it.', '我唔係好肯定，不過我諗要睇你點睇。', 'Hedging politely.', '', '', 'hedging = 留有餘地'],
+  ['To put it another way, …', '換句話講，……', 'Rephrasing your idea.', '', '', ''],
+  ['That said, there are some drawbacks.', '話雖如此，都有啲壞處。', 'Turning to the other side.', '', '', 'That said = 雖然係咁講'],
+  ['It\'s something I\'ve been meaning to do for ages.', '呢樣嘢我想做咗好耐。', 'Present perfect continuous, natural speech.', '', '', ''],
+  ['I\'m the kind of person who prefers to plan ahead.', '我係鍾意預早計劃嗰種人。', 'Describing personality (Part 1).', '', '', ''],
+  ['Looking back, I think it was a turning point in my life.', '回頭睇，我覺得嗰次係我人生轉捩點。', 'Ending a Part 2 story with reflection.', '', '', 'turning point'],
+  ['It was a real eye-opener for me.', '嗰次真係令我大開眼界。', 'Idiom for a new experience.', '', '', ''],
+  ['I couldn\'t agree more.', '我完全同意。', 'Strong agreement.', '', '', '唔係 "I can\'t agree"！意思係十分同意'],
+  ['I see where you\'re coming from, but…', '我明白你嘅角度，不過……', 'Polite disagreement.', '', '', ''],
+  ['It\'s hard to say for certain, but I\'d guess that within ten years…', '好難講實，不過我估十年內……', 'Speculating about the future.', '', '', ''],
+  ['In the long run, it would benefit society as a whole.', '長遠嚟講，對成個社會都有好處。', 'Talking about long-term effects.', '', '', 'in the long run'],
+  ['One thing that springs to mind is…', '我第一時間諗到嘅係……', 'Introducing an example.', '', '', 'spring to mind'],
+  ['I used to find it quite daunting, but I\'ve got used to it.', '我以前覺得幾吃力，不過而家習慣咗。', 'Contrasting past and present feelings.', '', '', 'used to do vs get used to'],
+  ['Generally speaking, older people are less keen on…', '一般嚟講，年紀大啲嘅人冇咁鍾意……', 'Generalising about groups.', '', '', 'keen on = 熱衷'],
+  ['The problem is that it\'s easier said than done.', '問題係講就容易做就難。', 'Idiom for difficulty.', '', '', ''],
+  ['Ideally, the government would…, but realistically…', '理想嚟講政府應該……，不過現實上……', 'Contrasting ideal and reality (Part 3).', '', '', ''],
+  ['It goes without saying that health comes first.', '不用多講，健康係最重要。', 'Stating something obvious.', '', '', ''],
+  ['I wouldn\'t say I\'m an expert, but I do know a bit about it.', '我唔敢話自己係專家，不過都識少少。', 'Modest answer with emphatic "do".', '', '', 'do know 加強語氣'],
+  ['So, to sum up, I\'d say the benefits outweigh the drawbacks.', '總括嚟講，我覺得好處多過壞處。', 'Concluding a Part 3 answer.', '', '', 'outweigh = 多過'],
+]);
+
+NE.deck('ielts-write7', 'IELTS: Band 7 writing', 'IELTS 寫作高分句型', 'ielts', '🖋️', { say: true }, [
+  ['It is often argued that…; however, I would contend that…', '經常有人認為……；不過，我會主張……', 'Opinion essay introduction.', '', '', 'contend = 主張'],
+  ['This essay will discuss both views before reaching a conclusion.', '本文會先討論兩種觀點，再作結論。', 'Discussion essay thesis.', '', '', ''],
+  ['While there are some advantages to…, I believe the disadvantages are more significant.', '雖然……有啲好處，我認為壞處更重要。', 'Advantages/disadvantages thesis.', '', '', ''],
+  ['There are several reasons why this has happened, and a number of steps could be taken to address it.', '呢個情況有幾個原因，亦有一啲方法可以處理。', 'Problem–solution thesis.', '', '', ''],
+  ['The primary reason for this is that…', '主要原因係……', 'Topic sentence for a body paragraph.', '', '', ''],
+  ['A clear example of this can be seen in…', '……就係一個清楚嘅例子。', 'Introducing an example.', '', '', ''],
+  ['As a result, …', '結果，……', 'Showing a consequence.', '', '', '同義：Consequently / Therefore'],
+  ['This, in turn, leads to…', '而呢個又會導致……', 'Showing a chain of effects.', '', '', 'in turn = 繼而'],
+  ['On the other hand, opponents of this view argue that…', '另一方面，反對嘅人認為……', 'Presenting the opposite view.', '', '', ''],
+  ['Admittedly, …; nevertheless, …', '誠然……；儘管如此，……', 'Concession then counter-argument.', '', '', '高分讓步句'],
+  ['It is undeniable that…', '不可否認……', 'Strong statement.', '', '', ''],
+  ['Not only would this reduce costs, but it would also improve public health.', '咁做唔單止可以減低成本，仲可以改善公眾健康。', 'Inversion in writing.', '', '', ''],
+  ['Were the government to invest more in…, …', '如果政府喺……投放更多資源，……', 'Formal conditional inversion.', '', '', '= If the government were to…'],
+  ['A more effective solution would be to…', '一個更有效嘅方法係……', 'Proposing a solution.', '', '', ''],
+  ['This would not only…, but also…', '咁唔單止會……，仲會……', 'Adding two results.', '', '', ''],
+  ['Governments should take measures to…', '政府應該採取措施……', 'Recommendation.', '', '', 'take measures to'],
+  ['There is a growing tendency for people to…', '愈嚟愈多人傾向……', 'Describing a trend.', '', '', ''],
+  ['This is largely attributable to…', '呢個主要歸因於……', 'Formal cause.', '', '', ''],
+  ['Despite the fact that…, …', '儘管……，……', 'Contrast with a clause.', '', '', 'Despite + the fact that + 句子'],
+  ['In conclusion, I firmly believe that…', '總括而言，我堅信……', 'Opinion conclusion.', '', '', ''],
+  ['To sum up, although…, I believe the benefits outweigh the drawbacks.', '總結，雖然……，我相信好處大過壞處。', 'Adv/dis conclusion.', '', '', ''],
+  ['The table compares… in terms of…', '個表以……比較……', 'Task 1 introduction (paraphrase the question).', '', '', ''],
+  ['Overall, it is clear that…', '整體而言，明顯……', 'Task 1 overview — essential for band 6+.', '', '', '冇 overview 最多 band 5'],
+  ['The figure rose sharply from 20% to 45% over the period.', '數字喺期間由 20% 急升至 45%。', 'Describing an increase.', '', '', 'rise sharply / steadily / slightly'],
+  ['…, whereas the number of… remained relatively stable.', '……，而……嘅數字就相對穩定。', 'Comparing two trends.', '', '', 'whereas = 而'],
+  ['…accounted for the largest proportion, at 38%.', '……佔最大比例，達 38%。', 'Describing proportions.', '', '', 'account for = 佔'],
+  ['At the first stage of the process, …; this is followed by…', '程序第一步係……；之後就係……', 'Describing a process (passive).', '', '', 'process 題多用被動式'],
+  ['A significant proportion of the population…', '相當大比例嘅人口……', 'Academic noun phrase.', '', '', ''],
+  ['It could be argued that…', '可以話……', 'Hedging an argument.', '', '', ''],
+  ['This raises the question of whether…', '咁就帶出一個問題：……係咪……', 'Introducing a debate.', '', '', ''],
+]);
+
+NE.deck('ielts-topics', 'IELTS: Topic vocabulary (band 7)', 'IELTS 話題字彙（進階）', 'ielts', '🌏', {}, [
+  // 教育
+  ['rote learning', '死記硬背', 'Learning by repeating, without understanding.', 'Rote learning is still common in Hong Kong schools.', '香港學校仍然好多死記硬背。', '教育題'],
+  ['critical thinking', '批判性思考', 'The ability to analyse information and judge it.', 'Schools should develop students\' critical thinking.', '學校應該培養學生批判性思考。', '教育題'],
+  ['vocational training', '職業培訓', 'Training for a specific job or trade.', 'Vocational training can reduce youth unemployment.', '職業培訓可以減少青年失業。', '教育題'],
+  ['tertiary education', '大專教育', 'Education at university or college level.', 'Access to tertiary education has widened.', '接受大專教育嘅機會增加咗。', ''],
+  ['curriculum', '課程', 'The subjects taught in a school or course.', 'Coding should be part of the school curriculum.', '編程應該納入學校課程。', ''],
+  ['academic pressure', '學業壓力', 'Stress caused by schoolwork and exams.', 'Academic pressure affects students\' mental health.', '學業壓力影響學生精神健康。', ''],
+  ['lifelong learning', '終身學習', 'Continuing to learn throughout life.', 'Lifelong learning is essential in a changing job market.', '喺轉變中嘅就業市場，終身學習好重要。', ''],
+  // 環境
+  ['carbon footprint', '碳足跡', 'The amount of carbon dioxide a person or activity produces.', 'Flying increases your carbon footprint.', '坐飛機會增加你嘅碳足跡。', '環境題'],
+  ['renewable energy', '可再生能源', 'Energy from sources like the sun and wind.', 'Governments should invest in renewable energy.', '政府應該投資可再生能源。', '環境題'],
+  ['fossil fuels', '化石燃料', 'Coal, oil and gas.', 'Burning fossil fuels causes global warming.', '燃燒化石燃料導致全球暖化。', ''],
+  ['deforestation', '砍伐森林', 'Cutting down large areas of forest.', 'Deforestation threatens biodiversity.', '砍伐森林威脅生物多樣性。', ''],
+  ['biodiversity', '生物多樣性', 'The variety of plants and animals in an area.', 'Pollution has reduced marine biodiversity.', '污染令海洋生物多樣性減少。', ''],
+  ['single-use plastics', '即棄塑膠', 'Plastic items used once and thrown away.', 'Many cities have banned single-use plastics.', '好多城市禁止即棄塑膠。', ''],
+  ['mitigate', '減輕', 'To make something bad less serious.', 'Planting trees can help mitigate climate change.', '種樹可以幫手減輕氣候變化。', '比 reduce 高級'],
+  ['exacerbate', '令惡化', 'To make a problem worse.', 'Traffic congestion exacerbates air pollution.', '交通擠塞令空氣污染惡化。', '比 make worse 高級'],
+  // 科技
+  ['digital divide', '數碼鴻溝', 'The gap between people who have access to technology and those who do not.', 'The digital divide affects older people the most.', '數碼鴻溝對長者影響最大。', '科技題'],
+  ['artificial intelligence', '人工智能', 'Computer systems that can perform tasks needing human intelligence.', 'Artificial intelligence may replace some jobs.', '人工智能可能取代某啲工作。', ''],
+  ['automation', '自動化', 'Using machines to do work instead of people.', 'Automation has transformed manufacturing.', '自動化改變咗製造業。', ''],
+  ['screen time', '屏幕時間', 'Time spent looking at phones, computers or TVs.', 'Children\'s screen time should be limited.', '應該限制兒童嘅屏幕時間。', ''],
+  ['cyberbullying', '網絡欺凌', 'Bullying through the internet or phones.', 'Cyberbullying is a growing problem among teenagers.', '網絡欺凌喺青少年之間愈嚟愈嚴重。', ''],
+  ['privacy concerns', '私隱問題', 'Worries about personal information being misused.', 'Social media raises serious privacy concerns.', '社交媒體引起嚴重私隱問題。', ''],
+  ['obsolete', '過時、淘汰', 'No longer used because something better exists.', 'Fax machines are almost obsolete.', '傳真機差唔多被淘汰。', ''],
+  // 工作與經濟
+  ['job security', '工作穩定性', 'Confidence that you will keep your job.', 'Many young people value job security over salary.', '好多後生仔重視工作穩定多過人工。', '工作題'],
+  ['remote working', '遙距工作', 'Working from home or away from the office.', 'Remote working became common after the pandemic.', '疫情後遙距工作變得普遍。', ''],
+  ['brain drain', '人才流失', 'When skilled people leave a country to work abroad.', 'Brain drain is a concern for the healthcare sector.', '人才流失係醫療界嘅隱憂。', ''],
+  ['unemployment rate', '失業率', 'The percentage of people without a job.', 'The unemployment rate fell to 3%.', '失業率跌至 3%。', ''],
+  ['cost of living', '生活成本', 'The amount of money needed for basic needs.', 'The cost of living in Hong Kong is very high.', '香港生活成本好高。', ''],
+  ['income inequality', '貧富不均', 'The unequal distribution of income in a society.', 'Income inequality has widened in many cities.', '好多城市貧富不均加劇。', ''],
+  ['consumerism', '消費主義', 'The idea that buying more goods is good.', 'Advertising encourages consumerism.', '廣告助長消費主義。', ''],
+  ['globalisation', '全球化', 'The increasing connection between countries\' economies and cultures.', 'Globalisation has created both winners and losers.', '全球化有得益者亦有受害者。', '美式 globalization'],
+  // 城市與社會
+  ['urbanisation', '城市化', 'The movement of people from the countryside to cities.', 'Rapid urbanisation puts pressure on housing.', '急速城市化令住屋壓力增加。', '城市題'],
+  ['infrastructure', '基礎建設', 'Basic systems like roads, transport and power.', 'The city needs better public transport infrastructure.', '城市需要更好嘅公共交通基建。', ''],
+  ['traffic congestion', '交通擠塞', 'Too many vehicles on the roads.', 'Traffic congestion wastes time and fuel.', '交通擠塞浪費時間同燃料。', ''],
+  ['affordable housing', '可負擔房屋', 'Homes that people on average incomes can afford.', 'There is a shortage of affordable housing.', '可負擔房屋短缺。', ''],
+  ['community cohesion', '社區凝聚力', 'How well people in a community get along together.', 'Public parks can strengthen community cohesion.', '公園可以加強社區凝聚力。', ''],
+  ['juvenile delinquency', '青少年犯罪', 'Crime committed by young people.', 'Lack of supervision may lead to juvenile delinquency.', '缺乏看管可能導致青少年犯罪。', '罪案題'],
+  ['deterrent', '阻嚇（作用）', 'Something that discourages people from doing something.', 'Some argue that prison is not an effective deterrent.', '有人認為坐監唔係有效阻嚇。', ''],
+  ['rehabilitation', '更生（罪犯）／康復', 'Helping someone return to normal life.', 'Rehabilitation reduces reoffending.', '更生可以減少重犯。', '醫療同罪案題都用'],
+  // 文化、媒體、旅遊
+  ['cultural heritage', '文化遺產', 'Traditions, buildings and customs passed down through generations.', 'Old buildings are part of our cultural heritage.', '舊建築係我哋文化遺產一部分。', ''],
+  ['mass tourism', '大眾旅遊（過度旅遊）', 'Large numbers of tourists visiting the same places.', 'Mass tourism can damage local environments.', '大眾旅遊會破壞當地環境。', ''],
+  ['misinformation', '錯誤資訊', 'False or misleading information.', 'Misinformation spreads quickly on social media.', '錯誤資訊喺社交媒體傳得好快。', ''],
+  ['role model', '榜樣', 'A person others look up to and copy.', 'Celebrities are role models for many teenagers.', '明星係好多青少年嘅榜樣。', ''],
+  // 高分通用字
+  ['detrimental to', '對……有害', 'Causing harm to.', 'Lack of sleep is detrimental to health.', '缺乏睡眠對健康有害。', '比 bad for 高級'],
+  ['beneficial to', '對……有益', 'Having a good effect on.', 'Regular exercise is beneficial to mental health.', '定期運動對精神健康有益。', ''],
+  ['far-reaching', '影響深遠', 'Having a wide effect.', 'The policy had far-reaching consequences.', '政策有深遠影響。', ''],
+  ['a double-edged sword', '雙刃劍', 'Something with both good and bad effects.', 'Technology is a double-edged sword.', '科技係一把雙刃劍。', ''],
+  ['pressing', '迫切', 'Needing urgent attention.', 'Climate change is one of the most pressing issues today.', '氣候變化係當今最迫切嘅問題之一。', ''],
+  ['widespread', '普遍', 'Existing in many places or among many people.', 'Smartphone use is widespread among the elderly.', '長者普遍用智能手機。', ''],
+  ['counterproductive', '適得其反', 'Having the opposite effect to what was intended.', 'Banning phones in class may be counterproductive.', '課堂禁手機可能適得其反。', ''],
+  ['incentive', '誘因、獎勵', 'Something that encourages people to do something.', 'Tax incentives encourage companies to go green.', '稅務優惠鼓勵企業環保。', ''],
+  ['allocate', '分配（資源）', 'To give money or resources for a purpose.', 'More funding should be allocated to public hospitals.', '應該分配更多資金俾公立醫院。', ''],
+  ['outweigh', '多過、重過', 'To be greater or more important than.', 'The benefits outweigh the risks.', '好處多過風險。', ''],
+]);
+
+// 加多啲常考話題嘅口語同寫作題（唔止健康）
+NE.ielts.speaking[1].push(
+  'Do you live in a house or a flat?', 'What do you like about the area where you live?', 'How do you usually travel to work?',
+  'Do you prefer reading books or watching films?', 'How often do you use your phone each day?', 'Do you like cooking? Why or why not?',
+  'What kind of weather do you like?', 'Have you ever learnt to play a musical instrument?', 'Do you prefer to spend time alone or with friends?',
+  'What did you enjoy doing as a child?'
+);
+NE.ielts.speaking[2].push(
+  { q: 'Describe a skill you would like to learn.', b: ['what the skill is', 'how you would learn it', 'how difficult it would be', 'and explain why you want to learn it'], tip: '用將來式同條件句（I would… / If I had more time…）。可以講游水、煮飯、外語。', v: ['acquire', 'master', 'challenging', 'rewarding'] },
+  { q: 'Describe a place in your city that you like to visit.', b: ['where it is', 'how often you go there', 'what you do there', 'and explain why you like it'], tip: '描述五官感受（see, hear, smell）會令內容生動。', v: ['tranquil', 'bustling', 'scenic', 'unwind'] },
+  { q: 'Describe a piece of technology you find useful.', b: ['what it is', 'when you started using it', 'how you use it', 'and explain why it is useful to you'], tip: '可以講手機 app、智能手錶；加優點同缺點顯示思考深度。', v: ['user-friendly', 'indispensable', 'convenient', 'drawback'] },
+  { q: 'Describe a book or film that made a strong impression on you.', b: ['what it was', 'when you read or watched it', 'what it was about', 'and explain why it impressed you'], tip: '劇情講兩三句就夠，重點放喺你嘅感受同反思。', v: ['thought-provoking', 'plot', 'moving', 'resonate with'] },
+  { q: 'Describe a goal you hope to achieve in the future.', b: ['what the goal is', 'when you set it', 'what you need to do to achieve it', 'and explain why it is important to you'], tip: '可以講考 IELTS、升 RN、去外國工作。用 hope to / plan to / be determined to。', v: ['ambition', 'determined', 'milestone', 'pursue'] },
+  { q: 'Describe a time when you had to wait a long time for something.', b: ['what you were waiting for', 'where you were', 'how long you waited', 'and explain how you felt'], tip: '用過去式同過去進行式（I was waiting when…）。', v: ['frustrating', 'patience', 'queue', 'worth the wait'] }
+);
+NE.ielts.speaking[3].push(
+  'Do you think schools should teach practical life skills?', 'Is it better to study at university or to start working early?',
+  'How has technology changed the way people communicate?', 'Do you think people rely too much on their phones?',
+  'What can individuals do to protect the environment?', 'Should governments tax products that harm the environment?',
+  'Why do so many young people want to live in big cities?', 'What are the disadvantages of living in a crowded city?',
+  'Do you think working from home will become more common?', 'What makes a job satisfying?',
+  'Is it important to preserve traditional culture?', 'How do celebrities influence young people?'
+);
+NE.ielts.writing.push(
+  { id: 't2-school', task: 2, type: 'opinion', q: 'Some people believe that schools should focus on practical skills such as cooking and managing money, rather than academic subjects. To what extent do you agree or disagree?' },
+  { id: 't2-city', task: 2, type: 'problem', q: 'More and more people are moving from rural areas to big cities. What problems does this cause? What can be done to solve them?' },
+  { id: 't2-env', task: 2, type: 'discuss', q: 'Some people think that protecting the environment is the responsibility of governments, while others believe individuals should take action. Discuss both views and give your own opinion.' },
+  { id: 't2-remote', task: 2, type: 'advdis', q: 'Many companies now allow employees to work from home. Do the advantages of this outweigh the disadvantages?' },
+  { id: 't2-phone', task: 2, type: 'opinion', q: 'Children today spend too much time on smartphones and computers. Parents should strictly limit their screen time. To what extent do you agree or disagree?' },
+  { id: 't2-abroad', task: 2, type: 'advdis', q: 'Many skilled workers, such as doctors and nurses, move to other countries to work. Is this a positive or negative development?' },
+  { id: 't2-crime', task: 2, type: 'discuss', q: 'Some people believe that the best way to reduce crime is to give longer prison sentences. Others think there are better ways. Discuss both views and give your opinion.' },
+  { id: 't2-tourism', task: 2, type: 'advdis', q: 'International tourism has grown rapidly in recent years. Do the benefits of tourism outweigh the drawbacks for local communities?' },
+  { id: 't1-commute', task: 1, type: 'table', q: 'The table below shows how people travelled to work in one city in 2005 and 2025 (percentage of workers). Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
+    table: { head: ['Method', '2005', '2025'], rows: [['Car', '42', '28'], ['Bus', '25', '18'], ['Underground train', '18', '33'], ['Bicycle', '5', '9'], ['Walking', '10', '7'], ['Work from home', '0', '5']] } }
+);

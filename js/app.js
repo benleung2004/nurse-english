@@ -40,11 +40,105 @@
     try { d = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { d = {}; }
     return {
       settings: Object.assign({}, DEFAULTS, d.settings), cards: d.cards || {}, log: d.log || {},
-      custom: d.custom || [], stars: d.stars || {}, drafts: d.drafts || {}, counters: Object.assign({ speak: 0, essay: 0 }, d.counters)
+      custom: d.custom || [], stars: d.stars || {}, drafts: d.drafts || {}, counters: Object.assign({ speak: 0, essay: 0 }, d.counters),
+      events: d.events || [], feedback: d.feedback || []
     };
   }
   let S = load();
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('儲存失敗：' + e.message); } }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('儲存失敗：' + e.message); } scheduleSync(); }
+  // 詳細記錄（俾 Claude 分析強弱項）：k = study / quiz / say / speak / essay
+  const MAX_EVENTS = 4000;
+  function logEv(o) { S.events.push(Object.assign({ t: Date.now() }, o)); if (S.events.length > MAX_EVENTS) S.events.splice(0, S.events.length - MAX_EVENTS); }
+
+  // ===== 同步去私人 GitHub repo（token 只存喺呢部機，唔會匯出）=====
+  const SYNC_KEY = 'ne_sync', SYNC_PATH = 'data/progress.json', DEFAULT_REPO = 'benleung2004/nurse-english-data';
+  let SY = {};
+  try { SY = JSON.parse(localStorage.getItem(SYNC_KEY) || '{}') || {}; } catch (e) { SY = {}; }
+  const saveSY = () => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(SY)); } catch (e) { /* 冇得存就算 */ } };
+  const syncReady = () => !!(SY.repo && SY.token);
+  let syncTimer = null, syncing = false, syncAgain = false;
+  function scheduleSync() { if (!syncReady()) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 5000); }
+  const b64enc = s => { const b = new TextEncoder().encode(s); let bin = ''; for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(bin); };
+  function ghFetch(opts) {
+    opts = opts || {};
+    return fetch(`https://api.github.com/repos/${SY.repo}/contents/${SYNC_PATH}`, Object.assign({ cache: 'no-store' }, opts, {
+      headers: Object.assign({ Authorization: `Bearer ${SY.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, opts.headers || {})
+    }));
+  }
+  // 手機係唯一資料來源：只上載，唔會由 repo 覆蓋手機資料
+  async function syncNow(manual) {
+    if (!syncReady()) { if (manual) toast('未連接同步'); return; }
+    if (!navigator.onLine) { if (manual) toast('而家離線，有網會自動同步'); return; }
+    if (syncing) { syncAgain = true; return; }
+    syncing = true; clearTimeout(syncTimer);
+    try {
+      let ok = false;
+      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+        const head = await ghFetch();
+        if (head.status === 401 || head.status === 403) throw new Error('auth');
+        if (!head.ok && head.status !== 404) throw new Error('GitHub 回應 ' + head.status);
+        const sha = head.ok ? (await head.json()).sha : null;
+        const body = { message: 'sync ' + today(), content: b64enc(JSON.stringify(exportData(), null, 1)) };
+        if (sha) body.sha = sha;
+        const r = await ghFetch({ method: 'PUT', body: JSON.stringify(body) });
+        if (r.status === 409 || r.status === 422) continue;
+        if (r.status === 401 || r.status === 403 || r.status === 404) throw new Error('auth');
+        if (!r.ok) throw new Error('GitHub 回應 ' + r.status);
+        ok = true;
+      }
+      if (!ok) throw new Error('同步衝突，稍後再試');
+      SY.lastSync = Date.now(); SY.lastError = ''; saveSY();
+      if (manual) toast('☁️ 已同步');
+    } catch (e) {
+      SY.lastError = e.message === 'auth' ? 'Token 無效、過期，或者冇呢個 repo 嘅權限' : (e.message === 'Failed to fetch' ? '連唔到 GitHub' : e.message);
+      saveSY(); if (manual) toast('同步失敗：' + SY.lastError);
+    } finally {
+      syncing = false; const st = document.getElementById('syncStatus'); if (st) st.textContent = syncStatusText();
+      if (syncAgain) { syncAgain = false; scheduleSync(); }
+    }
+  }
+  function syncStatusText() {
+    if (!syncReady()) return '未連接：資料只存喺呢部手機';
+    if (SY.lastError) return '⚠️ ' + SY.lastError;
+    if (SY.lastSync) { const d = new Date(SY.lastSync); return `☁️ 已同步 ${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+    return '☁️ 已連接，未同步';
+  }
+  window.addEventListener('online', () => scheduleSync());
+
+  // ===== 強項／弱項分析（App 顯示 + 匯出俾 Claude）=====
+  const QTYPE = { mcZh: '英→中選擇', mcEn: '中／解釋→英選擇', listen: '聽力', spell: '串字' };
+  function insights(days) {
+    const since = Date.now() - (days || 30) * 864e5;
+    const ev = S.events.filter(e => e.t >= since);
+    const byType = {}, byDeck = {}, miss = {};
+    const add = (o, k, ok) => { const x = o[k] || (o[k] = { n: 0, ok: 0 }); x.n++; if (ok) x.ok++; };
+    ev.forEach(e => {
+      const c = BY[e.id];
+      if (e.k === 'quiz') { add(byType, e.ty, e.ok); if (c) add(byDeck, c.d, e.ok); if (!e.ok) miss[e.id] = (miss[e.id] || 0) + 1; }
+      if (e.k === 'study' && !e.nw) { if (c) add(byDeck, c.d, e.g >= 2); if (e.g === 0) miss[e.id] = (miss[e.id] || 0) + 1; }
+    });
+    const rate = x => x.n ? Math.round(x.ok / x.n * 100) : null;
+    const decks = Object.keys(byDeck).filter(k => byDeck[k].n >= 5 && DECKMAP[k]).map(k => ({ deck: k, name: DECKMAP[k].zh, n: byDeck[k].n, pct: rate(byDeck[k]) })).sort((a, b) => b.pct - a.pct);
+    const types = Object.keys(byType).map(k => ({ type: k, name: QTYPE[k] || k, n: byType[k].n, pct: rate(byType[k]) })).filter(x => x.n >= 3).sort((a, b) => b.pct - a.pct);
+    const says = ev.filter(e => e.k === 'say');
+    return {
+      days: days || 30,
+      strengths: decks.filter(d => d.pct >= 80).slice(0, 3),
+      weaknesses: decks.filter(d => d.pct < 70).slice(-3).reverse(),
+      decks, quizTypes: types,
+      mostMissed: Object.keys(miss).filter(id => BY[id]).sort((a, b) => miss[b] - miss[a]).slice(0, 15).map(id => ({ id, en: fill(BY[id].en), zh: BY[id].zh, misses: miss[id] })),
+      pronunciation: says.length ? { tries: says.length, avg: Math.round(says.reduce((s, e) => s + e.sc, 0) / says.length * 100) } : null,
+      speaking: ev.filter(e => e.k === 'speak').length, essays: ev.filter(e => e.k === 'essay').length,
+      activeDays: new Set(ev.map(e => fmt(new Date(e.t)))).size
+    };
+  }
+  function exportData() {
+    return {
+      app: 'nurse-english', exportedAt: new Date().toISOString(), contentVersion: NE.cards.length,
+      summary: insights(30), settings: S.settings, counters: S.counters, feedback: S.feedback,
+      log: S.log, cards: S.cards, stars: S.stars, custom: S.custom, drafts: S.drafts, events: S.events
+    };
+  }
   function logToday() { const t = today(); return S.log[t] || (S.log[t] = { n: 0, r: 0, q: 0, qt: 0, ex: 0 }); }
   const activity = L => L ? (L.n || 0) + (L.r || 0) + (L.qt || 0) + (L.ex || 0) : 0;
 
@@ -174,6 +268,7 @@
       }
       const msg = best.sc >= 0.85 ? '👍 好準！' : best.sc >= 0.5 ? '🙂 幾好，再試一次會更好' : '💪 再試多次';
       out.innerHTML = `<b>${msg}</b> <span class="muted">聽到：「${esc(best.txt)}」</span>`;
+      logEv({ k: 'say', tx: fill(target).slice(0, 80), sc: Math.round(best.sc * 100) / 100, h: best.txt.slice(0, 80) }); save();
       if (best.sc >= 0.85) confetti(40);
     };
     r.onerror = e => { out.innerHTML = '<span class="muted">聽唔到（' + esc(e.error) + '），請再試／檢查咪高峰權限</span>'; };
@@ -271,6 +366,7 @@
   function grade(g) {
     const id = SES.queue[SES.i]; const prev = S.cards[id];
     S.cards[id] = nextState(prev, g);
+    logEv({ k: 'study', id, g, nw: prev ? 0 : 1, ms: Date.now() - (SES.shownAt || Date.now()) });
     const L = logToday();
     if (!SES.seen.has(id)) { SES.seen.add(id); if (!prev) L.n++; else L.r++; }
     if (g === 0) { SES.again++; SES.queue.splice(Math.min(SES.i + 4, SES.queue.length), 0, id); } else SES.good++;
@@ -328,7 +424,11 @@
       <a class="btn action" href="#ielts"><span class="ico c-purple">🎤</span>IELTS</a>
       <button class="action" data-act="addWord"><span class="ico c-orange">＋</span>加生字</button>
     </div>
-    <div class="card quote" style="margin-top:12px">
+    <div style="height:12px"></div>
+    ${coachCard()}
+    <a class="card tight deckrow" href="#feedback" style="color:inherit;text-decoration:none;--dc-soft:rgba(255,107,154,.16)"><div class="ic">💌</div>
+      <div class="grow"><b>意見箱</b><div class="small muted">有咩想改、唔明、錯字，寫低俾 Ben${Object.keys((NE.coach || {}).replies || {}).some(id => S.feedback.some(f => f.id === id)) ? ' · 有回覆 💬' : ''}</div></div><span>›</span></a>
+    <div class="card quote">
       <div class="small muted">💌 今日鼓勵</div>
       <p style="font-weight:700;margin-top:4px">${esc(q[0])}</p><p class="small muted">${esc(q[1])}</p>
     </div>
@@ -341,6 +441,7 @@
     if (!SES) { setTimeout(() => { location.hash = '#home'; }); return ''; }
     if (SES.i >= SES.queue.length) return studyDone();
     const c = BY[SES.queue[SES.i]]; const dk = deckOf(c); const dc = color(c.d);
+    if (SES.curPos !== SES.i) { SES.curPos = SES.i; SES.shownAt = Date.now(); }
     const showZh = S.settings.zhMode === 'always' || SES.showZh;
     const p = SES.i / SES.queue.length * 100;
     const prev = S.cards[c.id];
@@ -365,6 +466,7 @@
         <button class="chip" data-act="star" data-id="${esc(c.id)}">${S.stars[c.id] ? '⭐ 已收藏' : '☆ 收藏'}</button>
         ${!dk.roots ? `<button class="chip" data-act="say" data-text="${esc(speakText(c))}">🎤 跟讀</button>` : ''}
         <a class="chip btn" href="${esc(dictUrl(dk.roots ? speakText(c) : c.en))}" target="_blank" rel="noopener">🔎 字典</a>
+        <button class="chip" data-act="openFb" data-ctx="${esc(c.id)}">💌 意見</button>
       </div>
       <div id="sayOut" class="heard"></div>` : '';
     const grades = SES.revealed ? `<div class="grades">
@@ -463,6 +565,7 @@
         ${!dk.roots ? `<button class="chip" data-act="say" data-text="${esc(speakText(c))}">🎤 跟讀</button>` : ''}
         <a class="chip btn" href="${esc(dictUrl(dk.roots ? speakText(c) : c.en))}" target="_blank" rel="noopener">🔎 查字典／翻譯</a>
         <button class="chip" data-act="learnOne" data-id="${esc(c.id)}">📖 而家學</button>
+        <button class="chip" data-act="openFb" data-ctx="${esc(c.id)}">💌 意見</button>
         ${c.d === 'mine' ? `<button class="chip" data-act="editWord" data-id="${esc(c.id)}">✏️ 修改</button><button class="chip" data-act="delWord" data-id="${esc(c.id)}">🗑️ 刪除</button>` : ''}
       </div>
       <button class="btn-ghost btn-block" style="margin-top:14px" data-act="closeModal">關閉</button>`;
@@ -533,6 +636,7 @@
     if (!QZ) { setTimeout(() => { location.hash = '#quiz'; }); return ''; }
     if (QZ.i >= QZ.qs.length) return quizDone();
     const q = QZ.qs[QZ.i]; const c = BY[q.id]; const dk = deckOf(c);
+    if (QZ.shownPos !== QZ.i) { QZ.shownPos = QZ.i; QZ.shownAt = Date.now(); }
     let prompt = '', body = '';
     if (q.type === 'mcZh') prompt = `<div class="small muted">中文意思係？</div><div class="row" style="flex-wrap:nowrap"><div class="term grow">${esc(c.en)}</div>${spk(speakText(c))}</div>`;
     else if (q.type === 'mcEn') prompt = dk.say
@@ -554,7 +658,8 @@
       <b>${QZ.ok ? '✅ 啱！' : '❌ 唔啱'}</b>${QZ.typed != null && !QZ.ok ? ` 你打咗：「${esc(QZ.typed)}」` : ''}<br>
       <b>${esc(fill(c.en))}</b> — ${esc(fill(c.zh))}<br><span class="small">${dk.say ? '' : esc(c.def)}</span>
       ${c.note ? `<div class="small" style="margin-top:4px">💬 ${esc(fill(c.note))}</div>` : ''}</div>
-      <button class="btn-primary btn-block" style="margin-top:10px" data-act="nextQ">${QZ.i + 1 < QZ.qs.length ? '下一題 →' : '睇結果'}</button>` : '';
+      <div class="row" style="margin-top:10px;flex-wrap:nowrap"><button class="btn-primary grow" data-act="nextQ">${QZ.i + 1 < QZ.qs.length ? '下一題 →' : '睇結果'}</button>
+      <button class="chip" data-act="openFb" data-ctx="${esc(c.id)}" aria-label="對呢題有意見">💌</button></div>` : '';
     return `<div class="row" style="flex-wrap:nowrap;margin-bottom:12px"><button class="icon-btn" data-act="exitQuiz">✕</button>
       <div class="progress grow"><div style="width:${QZ.i / QZ.qs.length * 100}%"></div></div><span class="small muted">${QZ.i + 1}/${QZ.qs.length}</span></div>
       <div class="card flash ${QZ.answered ? '' : 'enter'}" style="--dc:${color(c.d)};min-height:0"><span class="deck-tag">${esc(dk.icon)} ${esc(dk.zh)}</span>${prompt}</div>
@@ -562,6 +667,7 @@
   };
   function answer(ok, picked, typed) {
     const q = QZ.qs[QZ.i]; QZ.answered = true; QZ.ok = ok; QZ.picked = picked; QZ.typed = typed;
+    logEv({ k: 'quiz', id: q.id, ty: q.type, ok: ok ? 1 : 0, a: typed != null ? typed : picked, ms: Date.now() - (QZ.shownAt || Date.now()) });
     const L = logToday(); L.qt++;
     if (ok) { QZ.score++; L.q++; }
     else {
@@ -694,6 +800,7 @@
         ${[['🔥', st, '連續日數'], ['🏆', ls, '最長連續'], ['📖', learned, '已學'], ['💎', mastered, '熟記（21日+）'], ['🎯', qt ? Math.round(q / qt * 100) + '%' : '–', '30日測驗準確'], ['⏰', tomorrow, '明日到期']]
         .map(([i, n, l]) => `<div class="card tile" style="margin:0"><div>${i}</div><div class="n">${n}</div><div class="l">${l}</div></div>`).join('')}
       </div>
+      <h2>🧭 強項同弱項</h2>${insightCard()}
       <h2>🗓️ 最近 12 星期</h2>
       <div class="card"><div class="heat">${cells}</div><p class="small muted" style="margin-top:8px">顏色越深學得越多，粉紅框 = 達標日</p></div>
       <h2>🏅 成就</h2>
@@ -721,13 +828,66 @@
       <h2>⏰ 每日提醒</h2>
       <div class="card"><p class="small">下載一個每日重複嘅日曆提醒（.ics），加入 iPhone／Android 日曆，到鐘就會彈通知。</p>
         <div class="row" style="flex-wrap:nowrap"><input type="time" data-set="remind" value="${esc(s.remind)}"><button class="btn-primary" data-act="ics">下載提醒</button></div></div>
+      <h2>☁️ 同步俾 Ben 睇（可選）</h2>
+      <div class="card"><p class="small">連接之後，學習記錄同意見箱會自動上載去 Ben 嘅<b>私人</b> GitHub repo，佢可以叫 Claude 分析你嘅強弱項、調整練習。Token 只存喺呢部手機。</p>
+        <p class="small" id="syncStatus" style="font-weight:700">${esc(syncStatusText())}</p>
+        <label>Repo</label><input id="syRepo" value="${esc(SY.repo || DEFAULT_REPO)}" autocapitalize="none" autocomplete="off">
+        <label>GitHub Token</label><input id="syToken" type="password" autocomplete="off" autocapitalize="none" placeholder="${SY.token ? '已設定（想換先填）' : '由 Ben 提供'}">
+        <div class="grid2" style="margin-top:10px"><button class="btn-primary" data-act="connectSync">${SY.token ? '儲存並同步' : '連接'}</button><button class="btn-ghost" data-act="syncNowBtn" ${syncReady() ? '' : 'disabled'}>立即同步</button></div>
+        ${SY.token ? '<button class="btn-ghost btn-block" style="margin-top:8px" data-act="disconnectSync">喺呢部機中斷同步</button>' : ''}</div>
       <h2>💾 備份</h2>
-      <div class="card"><p class="small">學習記錄只存喺呢部手機。換機或清 Safari 資料前，記得匯出備份。</p>
+      <div class="card"><p class="small">學習記錄只存喺呢部手機。換機或清 Safari 資料前，記得匯出備份。未連接同步的話，亦可以將匯出檔案傳俾 Ben 分析。</p>
         <div class="grid2"><button class="btn-ghost" data-act="export">⬇️ 匯出備份</button><button class="btn-ghost" data-act="import">⬆️ 匯入備份</button></div>
         <input type="file" id="importFile" accept="application/json,.json" class="hidden">
         <button class="btn-ghost btn-block" style="margin-top:10px;color:var(--bad)" data-act="reset">重設所有學習記錄</button></div>
       <p class="small muted center">Made with ❤️ · 內容 ${NE.cards.length} 張卡 · 資料只存喺本機</p>`;
   };
+
+  // ===== 意見箱 =====
+  const FB_CATS = [['bug', '🐞 有問題／錯字'], ['hard', '😵 太難'], ['easy', '😴 太易'], ['want', '💡 想要新功能'], ['other', '💬 其他']];
+  function feedbackForm(ctx, inline) {
+    const c = ctx && BY[ctx];
+    return `${inline ? '' : '<h2 style="margin-top:0">💌 寫意見俾 Ben</h2>'}
+      <p class="small muted">有咩唔明、錯字、太難太易、想加咩，都可以寫。Ben 會叫 Claude 睇完再改 app。</p>
+      ${c ? `<div class="ex small">關於：<b>${esc(fill(c.en))}</b> — ${esc(fill(c.zh))}</div>` : ''}
+      <div class="row" style="margin:10px 0">${FB_CATS.map(([k, t], i) => `<button class="chip ${i === (c ? 0 : 3) ? 'on' : ''}" data-act="fbCat" data-cat="${k}">${t}</button>`).join('')}</div>
+      <textarea id="fbText" placeholder="例如：呢個字嘅中文唔啱／想多啲聽力練習／Part 2 題目太難…" style="min-height:120px"></textarea>
+      ${inline ? `<button class="btn-primary btn-block" style="margin-top:12px" data-act="fbSend" data-ctx="">送出 💌</button>`
+        : `<div class="grid2" style="margin-top:12px"><button class="btn-ghost" data-act="closeModal">取消</button><button class="btn-primary" data-act="fbSend" data-ctx="${esc(ctx || '')}">送出 💌</button></div>`}`;
+  }
+  V.feedback = () => {
+    const list = S.feedback.slice().reverse(); const R = (NE.coach && NE.coach.replies) || {};
+    return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#home">‹</a><h1 class="grow">💌 意見箱</h1></div>
+      <div class="card">${feedbackForm('', true)}</div>
+      <p class="small muted">${syncReady() ? '已連接同步：送出後 Ben 可以直接睇到。' : '未連接同步：Ben 要喺「設定 → 匯出」攞資料先睇到。'}</p>
+      <h2>我寫過嘅意見</h2>
+      ${list.length ? list.map(f => {
+        const c = f.ctx && BY[f.ctx]; const cat = FB_CATS.find(x => x[0] === f.cat); const rep = R[f.id];
+        return `<div class="card tight"><div class="row between"><span class="pill">${esc(cat ? cat[1] : f.cat)}</span><span class="small muted">${esc(new Date(f.t).toLocaleDateString('zh-HK'))}</span></div>
+          ${c ? `<div class="small muted" style="margin-top:6px">關於：${esc(fill(c.en))}</div>` : ''}
+          <p>${esc(f.text)}</p>
+          ${rep ? `<div class="note">💬 回覆：${esc(rep)}</div>` : '<div class="small muted">⏳ 等緊處理</div>'}</div>`;
+      }).join('') : '<p class="muted small">未有意見</p>'}`;
+  };
+  function coachCard() {
+    const P = NE.coach && NE.coach.plan; if (!P || (!P.message && !(P.focus || []).length)) return '';
+    return `<div class="card" style="border-left:5px solid #8b5cf6"><div class="row between"><b>📌 今期重點</b>${NE.coach.updated ? `<span class="small muted">${esc(NE.coach.updated)}</span>` : ''}</div>
+      ${P.message ? `<p class="small">${esc(P.message)}</p>` : ''}
+      <div class="row">${(P.focus || []).map(f => f.act === 'deck'
+        ? `<a class="chip btn" href="#deck/${encodeURIComponent(f.deck)}">${esc(f.label)}</a>`
+        : `<button class="chip" data-act="quiz" data-kind="${esc(f.kind)}" ${f.deck ? `data-deck="${esc(f.deck)}"` : ''}>${esc(f.label)}</button>`).join('')}</div></div>`;
+  }
+  function insightCard() {
+    const I = insights(30);
+    if (!I.decks.length && !I.quizTypes.length) return `<div class="card small muted">做多幾次溫習同測驗（每個字庫最少 5 次），呢度就會顯示你嘅強項同弱項。</div>`;
+    const row = (x, label) => `<div class="row between small" style="margin:4px 0"><span>${esc(label)}</span><b style="color:${x.pct >= 80 ? 'var(--good)' : x.pct >= 60 ? 'var(--warn)' : 'var(--bad)'}">${x.pct}%</b></div>`;
+    return `<div class="card">
+      ${I.strengths.length ? `<h3>💪 強項</h3>${I.strengths.map(x => row(x, x.name)).join('')}` : ''}
+      ${I.weaknesses.length ? `<h3 style="margin-top:10px">🎯 要加強</h3>${I.weaknesses.map(x => row(x, x.name)).join('')}` : ''}
+      ${I.quizTypes.length ? `<h3 style="margin-top:10px">✏️ 測驗題型</h3>${I.quizTypes.map(x => row(x, x.name + `（${x.n} 題）`)).join('')}` : ''}
+      ${I.pronunciation ? `<p class="small muted" style="margin-top:8px">🎤 跟讀 ${I.pronunciation.tries} 次，平均準確 ${I.pronunciation.avg}%</p>` : ''}
+      <p class="small muted">最近 30 日 · 溫習評「記得／好易」同測驗答啱都計做啱</p></div>`;
+  }
 
   // ===== 路由 =====
   function render() {
@@ -735,7 +895,7 @@
     const route = V[r] ? r : 'home';
     if (route !== 'quizrun' && route !== 'study') { if (window.speechSynthesis) speechSynthesis.cancel(); }
     document.body.classList.toggle('focus', ['study', 'quizrun', 'write'].includes(route));
-    const tabFor = { deck: 'library', quizrun: 'quiz', write: 'ielts', settings: 'home', study: 'home' }[route] || route;
+    const tabFor = { deck: 'library', quizrun: 'quiz', write: 'ielts', settings: 'home', study: 'home', feedback: 'home' }[route] || route;
     document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabFor));
     $('#app').innerHTML = V[route](arg ? decodeURIComponent(arg) : undefined);
     after(route);
@@ -786,6 +946,24 @@
       S.custom = S.custom.filter(c => c.id !== id); delete S.cards[id]; delete S.stars[id];
       save(); rebuild(); closeModal(); render(); toast('已刪除');
     },
+    openFb: el => openModal(feedbackForm(el.dataset.ctx || '')),
+    fbCat: el => { el.parentElement.querySelectorAll('.chip').forEach(b => b.classList.toggle('on', b === el)); },
+    fbSend: el => {
+      const box = el.closest('.sheet, .card') || document; const ta = box.querySelector('#fbText');
+      const text = (ta.value || '').trim(); if (!text) { ta.classList.add('shake'); return toast('寫少少嘢先送出'); }
+      const on = box.querySelector('[data-act=fbCat].on');
+      S.feedback.push({ id: 'fb' + Date.now(), t: Date.now(), cat: on ? on.dataset.cat : 'other', text, ctx: el.dataset.ctx || '', route: location.hash.slice(1) });
+      save(); closeModal(); toast('💌 已送出，多謝！'); if (location.hash === '#feedback') render();
+      if (syncReady()) syncNow(false);
+    },
+    connectSync: () => {
+      const repo = $('#syRepo').value.trim(), tok = $('#syToken').value.trim();
+      if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return toast('repo 格式：用戶名/repo名');
+      if (!tok && !SY.token) return toast('請貼上 GitHub token');
+      SY.repo = repo; if (tok) SY.token = tok; SY.lastError = ''; saveSY(); syncNow(true).then(render);
+    },
+    syncNowBtn: () => syncNow(true).then(render),
+    disconnectSync: () => { if (!confirm('喺呢部機中斷同步？（唔會刪除任何資料）')) return; delete SY.token; SY.lastError = ''; saveSY(); render(); toast('已中斷'); },
     quiz: el => startQuiz(el.dataset.kind, el.dataset.deck),
     quizDeckGo: () => startQuiz('deck', $('#quizDeck').value),
     quizAgain: () => startQuiz(QZ.kind, QZ.deck),
@@ -805,13 +983,17 @@
     tgo: el => startTimer(Number(el.dataset.s), '作答中…'),
     p2go: () => startTimer(60, '準備時間（寫低關鍵字）', () => { toast('🎤 開始講！2 分鐘'); startTimer(120, '講緊…（最少講夠 1 分鐘）'); }),
     rec: () => toggleRecord(),
-    speakDone: () => { S.counters.speak++; logToday().ex += 3; save(); checkGoal(); toast('👏 練完一題！+3'); A.nextSpeak(); },
+    speakDone: () => {
+      const list = NE.ielts.speaking[IEL.part]; const it = list[(IEL.idx[IEL.part] || 0) % list.length];
+      logEv({ k: 'speak', p: IEL.part, q: (IEL.part === 2 ? it.q : it).slice(0, 100), rec: REC ? 1 : 0 });
+      S.counters.speak++; logToday().ex += 3; save(); checkGoal(); toast('👏 練完一題！+3'); A.nextSpeak(); },
     essayDone: el => {
       const id = el.dataset.id; const d = S.drafts[id] || { text: '' }; const w = NE.ielts.writing.find(x => x.id === id);
       const wc = countWords(d.text), target = w.task === 2 ? 250 : 150;
       if (wc < 30) return toast('寫多少少先撳完成 ✍️');
       if (wc < target && !confirm(`得 ${wc} 字（要求 ${target}），考試會扣分。都當完成？`)) return;
       if (!d.done) { S.counters.essay++; logToday().ex += 10; }
+      logEv({ k: 'essay', id, wc, task: w.task });
       d.done = today(); S.drafts[id] = d; save(); stopTimer(); checkGoal(); confetti(); toast('🎉 完成一篇！+10');
     },
     ics: () => {
@@ -824,12 +1006,12 @@
         'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:學英文時間到 💪', 'TRIGGER:-PT0M', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
       download('nurse-english-reminder.ics', ics, 'text/calendar');
     },
-    export: () => download('nurse-english-backup-' + today() + '.json', JSON.stringify(S, null, 1), 'application/json'),
+    export: () => download('nurse-english-backup-' + today() + '.json', JSON.stringify(exportData(), null, 1), 'application/json'),
     import: () => $('#importFile').click(),
     reset: () => {
       if (!confirm('確定清除所有學習記錄？（建議先匯出備份）')) return;
       if (!confirm('真係確定？呢個動作冇得還原。')) return;
-      const keep = S.settings; S = load(); S.cards = {}; S.log = {}; S.custom = []; S.stars = {}; S.drafts = {}; S.counters = { speak: 0, essay: 0 }; S.settings = keep;
+      const keep = S.settings; S = load(); S.cards = {}; S.log = {}; S.custom = []; S.stars = {}; S.drafts = {}; S.counters = { speak: 0, essay: 0 }; S.events = []; S.settings = keep;
       save(); rebuild(); toast('已重設'); location.hash = '#home'; render();
     }
   };

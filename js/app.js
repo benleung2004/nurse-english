@@ -389,6 +389,32 @@
     render();
   }
   function spkStop() { if (REC && REC.mr.state === 'recording') REC.mr.stop(); }
+  // 句子卡：錄音俾 AI 聽（同 IELTS 口語分開）
+  let CREC = null;
+  async function cardRecToggle() {
+    if (CREC) { if (CREC.mr.state === 'recording') CREC.mr.stop(); return; }
+    if (!navigator.mediaDevices || !window.MediaRecorder) { toast('呢部機唔支援錄音'); return; }
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { toast('未能使用咪高峰：請喺設定允許 Safari 用咪高峰'); return; }
+    stopDictate();
+    const mr = new MediaRecorder(stream); const chunks = []; const pos = SES && SES.i;
+    CREC = { mr, t0: Date.now(), discard: false };
+    mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop()); const r = CREC; CREC = null; clearTimeout(r.cap);
+      if (r.discard || !SES || SES.i !== pos) return;
+      const dur = (Date.now() - r.t0) / 1000;
+      if (dur < 1.5) { toast('太短喇，再講一次'); render(); return; }
+      const blob = new Blob(chunks, { type: mr.mimeType || 'audio/mp4' });
+      SES.rec = { audio: 1, url: URL.createObjectURL(blob) }; SES.revealed = true; SES.anim = 'flip'; render();
+      const c = BY[SES.queue[SES.i]];
+      let audio, mime = 'audio/wav';
+      try { audio = await toWavB64(blob); } catch (e) { audio = b64(new Uint8Array(await blob.arrayBuffer())); mime = (blob.type || 'audio/mp4').split(';')[0]; }
+      runAI('sayAudio', { ctx: c.def, zh: fill(c.zh), model: fill(c.en), audio, mime, dur: Math.round(dur) }, 'aiSayBox', c.id);
+    };
+    mr.start(); CREC.cap = setTimeout(() => { if (CREC && CREC.mr.state === 'recording') CREC.mr.stop(); }, 30000);
+    render();
+  }
+  function stopCardRec() { if (CREC) { CREC.discard = true; if (CREC.mr.state === 'recording') CREC.mr.stop(); else CREC = null; } }
   function stopRecording() { if (REC) { REC.discard = true; if (REC.mr.state === 'recording') REC.mr.stop(); else REC = null; } }
   // iPhone 錄出嚟係 mp4/aac；轉做 16kHz 單聲道 WAV，Gemini 一定食到，檔案亦細
   async function toWavB64(blob) {
@@ -429,6 +455,7 @@
     location.hash = '#study';
   }
   function grade(g) {
+    stopCardRec();
     const id = SES.queue[SES.i]; const prev = S.cards[id];
     S.cards[id] = nextState(prev, g);
     logEv({ k: 'study', id, g, nw: prev ? 0 : 1, ms: Date.now() - (SES.shownAt || Date.now()) });
@@ -518,7 +545,9 @@
     let front, back = '';
     const recallBox = SES.revealed ? '' : `<div class="row" style="flex-wrap:nowrap;margin-top:4px"><input id="recallIn" value="${esc(SES.typed || '')}" autocomplete="off" autocapitalize="${dk.say ? 'sentences' : 'none'}" placeholder="${dk.say ? '🎤 講出嚟或者打英文…' : '打中文意思（可選）'}">
       <button class="speak" data-act="dictate" data-target="recallIn" data-lang="${dk.say ? 'en' : 'zh'}" aria-label="講">🎤</button></div>
-      <div class="small muted">${dk.say ? '先自己講／打，再對答案，會有分數' : '答咗先揭，會幫你對答案'}</div>`;
+      <div class="small muted">${dk.say ? '先自己講／打，再對答案，會有分數' : '答咗先揭，會幫你對答案'}</div>
+      ${dk.say && aiReady() ? (CREC ? `<button class="btn-accent btn-block" style="margin-top:8px" data-act="sayRec"><span class="rec"></span> 講完，交俾 AI 聽</button>`
+        : `<button class="btn-ghost btn-block" style="margin-top:8px" data-act="sayRec">🎙️ 錄音俾 AI 聽（評讀音同意思）</button>`) : ''}`;
     // 字卡：4 揀 1 中文意思（唔使打字、唔使 AI）
     if (!dk.say && (!SES.ch || SES.ch.pos !== SES.i)) SES.ch = { pos: SES.i, ids: makeChoices(c, 'mcZh') };
     const mcBox = dk.say ? '' : `<div class="small muted" style="margin-top:4px">${SES.revealed ? '' : '揀啱嘅中文意思：'}</div><div class="choices">${SES.ch.ids.map(id => {
@@ -526,12 +555,15 @@
       return `<button class="${cls}" data-act="recPick" data-id="${esc(id)}" ${SES.revealed ? 'disabled' : ''}>${esc(BY[id].zh)}</button>`;
     }).join('')}</div>`;
     let recallRes = '';
-    if (SES.revealed && SES.rec && SES.rec.mc) {
+    if (SES.revealed && SES.rec && SES.rec.audio) {
+      recallRes = `${SES.rec.url ? `<audio controls src="${SES.rec.url}" style="width:100%"></audio>` : ''}<div id="aiSayBox"></div>`;
+    } else if (SES.revealed && SES.rec && SES.rec.mc) {
       recallRes = `<div class="fb ${SES.rec.ok ? 'ok' : 'no'} small"><b>${SES.rec.ok ? '✅ 啱！' : '❌ 唔啱，記住正確答案'}</b>${SES.rec.ok ? '' : '　建議揀「唔記得」'}</div>`;
     } else if (SES.revealed && SES.rec) {
       const R = SES.rec;
       recallRes = R.m
-        ? `<div class="fb ${R.sc >= .85 ? 'ok' : 'no'} small"><b>你講：</b>${esc(R.v)}<br><b>${Math.round(R.sc * 100)}%</b>　${R.m.words.map((w, i) => `<span style="${R.m.hit.has(i) ? 'color:var(--good)' : 'color:var(--bad);text-decoration:underline;font-weight:800'}">${esc(w)}</span>`).join(' ')}
+        ? `<div class="fb ${R.sc >= .85 ? 'ok' : 'no'} small"><b>你講：</b>${esc(R.v)}<br><b>${Math.round(R.sc * 100)}%</b>　${R.m.words.map((w, i) => `<span style="${R.m.near && R.m.near.has(i) ? 'color:var(--warn)' : R.m.hit.has(i) ? 'color:var(--good)' : 'color:var(--bad);text-decoration:underline;font-weight:800'}">${esc(w)}</span>`).join(' ')}
+           ${R.m.near && R.m.near.size ? '<div class="small muted" style="margin-top:4px">🟡 黃色 = 語音辨識聽成另一個字，但讀音好似，當你啱</div>' : ''}
            ${R.sc >= .95 ? '<div style="margin-top:6px"><b>✅ 完全正確！</b></div></div>' : `<div class="row" style="margin-top:6px"><button class="chip" data-act="aiSay" data-id="${esc(c.id)}">🤖 我講法唔同，問 AI 啱唔啱</button></div></div><div id="aiSayBox"></div>`}`
         : `<div class="fb ${R.sc >= .6 ? 'ok' : 'no'} small"><b>你答：</b>${esc(R.v)}　→　${R.sc >= .6 ? '✅ 接近' : '🤔 再睇清楚'}（${Math.round(R.sc * 100)}%）</div>`;
     }
@@ -1047,13 +1079,31 @@
     ALL.forEach(c => { const dk = deckOf(c); if (dk.roots || dk.abbr) return; if (dk.say) pool.push(fill(c.en)); else if (c.ex) pool.push(c.ex); });
     DC = { text: pool[Math.floor(Math.random() * pool.length)], done: false, count: (DC ? DC.count : 0) };
   }
-  function lcsMark(target, typed) {
+  // 讀音相似：語音辨識成日將 their 聽成 there、hospital 聽成 hospitals，呢啲當你讀啱（黃色）
+  function soundKey(w) {
+    let k = w.replace(/'/g, '').replace(/ph/g, 'f').replace(/ck/g, 'k').replace(/c(?=[eiy])/g, 's').replace(/[cq]/g, 'k').replace(/x/g, 'ks').replace(/z/g, 's')
+      .replace(/gh/g, '').replace(/^kn/, 'n').replace(/^wr/, 'r').replace(/^wh/, 'w').replace(/dg/g, 'j');
+    k = k[0] + k.slice(1).replace(/[aeiouyhw]/g, '');
+    return k.replace(/(.)\1+/g, '$1');
+  }
+  function lev(a, b) {
+    const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) { let prev = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; } }
+    return d[b.length];
+  }
+  function soundAlike(a, b) {
+    if (a === b) return true; const L = Math.min(a.length, b.length);
+    if (L >= 3 && soundKey(a) === soundKey(b)) return true;
+    return L >= 4 && a[0] === b[0] && lev(a, b) <= (L >= 7 ? 2 : 1);
+  }
+  function lcsMark(target, typed, fuzzy) {
     const a = norm(target), b = norm(typed);
+    const eq = (x, y) => x === y || (fuzzy && soundAlike(x, y));
     const dp = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
-    for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    const hit = new Set(); let i = 0, j = 0;
-    while (i < a.length && j < b.length) { if (a[i] === b[j]) { hit.add(i); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++; }
-    return { words: a, hit, acc: a.length ? hit.size / a.length : 0 };
+    for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) dp[i][j] = eq(a[i], b[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    const hit = new Set(), near = new Set(); let i = 0, j = 0;
+    while (i < a.length && j < b.length) { if (eq(a[i], b[j])) { hit.add(i); if (a[i] !== b[j]) near.add(i); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++; }
+    return { words: a, hit, near, acc: a.length ? hit.size / a.length : 0 };
   }
   V.dict = () => {
     if (!DC) newDict();
@@ -1132,7 +1182,7 @@
   let AIC = {}; try { AIC = JSON.parse(localStorage.getItem(AI_KEY) || '{}') || {}; } catch (e) { AIC = {}; }
   const saveAIC = () => { try { localStorage.setItem(AI_KEY, JSON.stringify(AIC)); } catch (e) { /* 冇得存 */ } };
   const aiReady = () => !!AIC.key;
-  const AI_KIND = { essay: '寫作', speak: '口語', speakAudio: '口語（錄音）', para: '改寫', say: '句子講法' };
+  const AI_KIND = { essay: '寫作', speak: '口語', speakAudio: '口語（錄音）', sayAudio: '句子（錄音）', para: '改寫', say: '句子講法' };
   const AI_PREF = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
   async function aiPickModels() {
     const r = await fetchT('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': AIC.key } }, 8000);
@@ -1152,7 +1202,7 @@
     finally { clearTimeout(t); }
   }
   // 短題（句子、改寫）要快：用 Lite 型號、唔開「思考」、限制長度
-  const AI_LIMIT = { speakAudio: { ms: 60000, tok: 2500 }, say: { ms: 10000, tok: 500, fast: true }, para: { ms: 10000, tok: 600, fast: true }, speak: { ms: 30000, tok: 1500 }, essay: { ms: 60000, tok: 3000 } };
+  const AI_LIMIT = { speakAudio: { ms: 60000, tok: 2500 }, sayAudio: { ms: 25000, tok: 900, fast: true }, say: { ms: 10000, tok: 500, fast: true }, para: { ms: 10000, tok: 600, fast: true }, speak: { ms: 30000, tok: 1500 }, essay: { ms: 60000, tok: 3000 } };
   function thinkCfg(m, fast) {
     if (/^gemini-2\.5-flash/.test(m)) return { thinkingBudget: 0 };
     if (/^gemini-3/.test(m)) return { thinkingLevel: fast ? 'minimal' : 'low' };
@@ -1252,6 +1302,11 @@ The attached audio (${d.dur} seconds) is her spoken answer to IELTS Speaking Par
 Question: ${d.q}
 First transcribe exactly what she said (keep her grammar mistakes, mark long pauses as "..."). Then assess like an IELTS examiner, including pronunciation from the audio. If the audio is silent or not English, say so in summary and give band 0.
 Return JSON: {"transcript": "...", "band": overall band (number, 0.5 steps), "criteria": {"Fluency and Coherence": band, "Lexical Resource": band, "Grammatical Range and Accuracy": band, "Pronunciation": band}, "summary": "2-3 sentences in Chinese", "strengths": ["Chinese" max 3], "improve": ["Chinese" max 3], "corrections": [{"wrong": "exact words she said", "right": "better English", "why": "Chinese"} max 6], "pron": [{"word": "word she mispronounced", "tip": "Chinese tip on how to say it"} max 5], "better": "a natural band-7 answer to the same question in English, about ${d.part === 2 ? 180 : 60} words, using her ideas"}`,
+    sayAudio: (d) => `${AI_ROLE}
+Situation for a nurse in Hong Kong: "${d.ctx}". She wanted to say (Chinese): "${d.zh}". Model English: "${d.model}".
+The attached audio (${d.dur} seconds) is her saying it. Listen carefully.
+1) Transcribe exactly what she said. 2) Judge the MEANING: other correct, polite wordings are fine; do not punish small differences from the model. 3) Judge PRONUNCIATION: she has a Hong Kong accent, which is fine; only flag words that would be hard for a patient or colleague to understand.
+Return JSON: {"transcript": "...", "score": 0-10, "ok": true if the meaning is right and understandable, "summary": "Chinese, 1-2 sentences", "corrections": [{"wrong": "...", "right": "...", "why": "Chinese"} max 3], "pron": [{"word": "...", "tip": "Chinese tip"} max 4], "better": "most natural version in English"}`,
     say: (d) => `${AI_ROLE}
 Situation for a nurse in Hong Kong: "${d.ctx}". She wanted to say (Chinese): "${d.zh}". Model English: "${d.model}".
 What she said (speech-to-text or typed): "${d.text}"
@@ -1379,7 +1434,8 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         做完一項會自動打 ✅。完成每日目標會有彩紙 🎉，連續日數 🔥 會加。`)}
       ${sec('📚', '學習卡點用？（唔好淨係睇！）', `
         • 字卡：先睇英文，喺 <b>4 個中文意思入面揀一個</b>，即刻知啱定錯，再睇英文解釋同例句。完全唔識就撳「唔識，直接睇答案」。<br>
-        • 「實用句子」字庫相反：先睇中文，<b>用英文講出嚟</b>：iPhone 撳格仔，再撳鍵盤上嘅 🎤 講（或者直接打）。揭答案會逐個字對，綠色 = 啱，紅色 = 漏咗／錯咗。講法唔同可以撳「🤖 問 AI」。<br>
+        • 「實用句子」字庫相反：先睇中文，<b>用英文講出嚟</b>：iPhone 撳格仔，再撳鍵盤上嘅 🎤 講（或者直接打）。揭答案會逐個字對，綠色 = 啱，🟡 黃色 = 辨識聽錯但讀音好似（當你啱），紅色 = 漏咗／錯咗。講法唔同可以撳「🤖 問 AI」。<br>
+        • 想知自己<b>讀得準唔準</b>：撳「🎙️ 錄音俾 AI 聽」，講完撳「講完」。AI 會直接聽你把聲：寫低佢聽到咩、意思啱唔啱（唔同講法都得）、邊個字讀得唔清楚。每次用 1 次 AI 額度。<br>
         • 記住：<b>自己諗、自己講</b>先會記得，淨係睇答案好快會唔記得。<br>
         • 揭咗之後<b>誠實揀</b>：唔記得（今日會再出）／難／記得／好易（會隔耐啲先再出）。<br>
         • 🔊 聽讀音　🎤 跟讀（電腦會評；iPhone 就聽完跟住讀）　🔎 查字典　☆ 收藏　💌 對呢張卡有意見。<br>
@@ -1475,6 +1531,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     const raw = (location.hash || '#home').slice(1); const [r, arg] = raw.split('/');
     const route = V[r] ? r : 'home';
     if (REC && route !== 'ielts') { stopRecording(); stopTimer(); }
+    if (CREC && route !== 'study') stopCardRec();
     if (!['quizrun', 'study', 'listen', 'dict'].includes(route)) { if (window.speechSynthesis) speechSynthesis.cancel(); }
     document.body.classList.toggle('focus', ['study', 'quizrun', 'write', 'read', 'listen', 'dict'].includes(route));
     const tabFor = { deck: 'library', quizrun: 'quiz', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', settings: 'home', study: 'home', feedback: 'home', help: 'home', plan: 'home' }[route] || route;
@@ -1507,6 +1564,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     learnOne: el => { closeModal(); startSession({ ids: [el.dataset.id] }); },
     studyDeck: el => startSession({ deck: el.dataset.deck, newCount: 10 }),
     hint: () => { SES.hint = true; render(); },
+    sayRec: () => cardRecToggle(),
     recPick: el => {
       if (SES.revealed) return;
       const c = BY[SES.queue[SES.i]]; const ok = el.dataset.id === c.id;
@@ -1520,7 +1578,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       SES.rec = null;
       if (v) {
         const c = BY[SES.queue[SES.i]];
-        if (deckOf(c).say) { const m = lcsMark(fill(c.en), v); SES.rec = { v, m, sc: m.acc }; }
+        if (deckOf(c).say) { const m = lcsMark(fill(c.en), v, true); SES.rec = { v, m, sc: m.acc }; }
         else {
           const zh = (c.zh.match(/[一-鿿]/g) || []); const typed = v;
           const hit = zh.filter(ch => typed.includes(ch)).length;

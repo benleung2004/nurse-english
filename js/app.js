@@ -270,7 +270,10 @@
     if (btn) { btn.classList.add('playing'); u.onend = u.onerror = () => btn.classList.remove('playing'); }
     speechSynthesis.speak(u);
   }
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  // iPhone／iPad 嘅網頁語音辨識（特別係加咗去主畫面）會卡死成個 app，所以 iOS 唔用：
+  // 句子用鍵盤 🎤 輸入；IELTS 口語用錄音 + AI 聽
+  const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const SR = IOS ? null : (window.SpeechRecognition || window.webkitSpeechRecognition);
   // iPhone 打字／語音會用彎引號 ’，要先統一，否則 That’s 會被拆開計錯
   const norm = s => fill(s).toLowerCase().replace(/[\u2018\u2019\u02BC`´]/g, "'").replace(/\(.*?\)/g, '').replace(/[^a-z0-9' ]/g, ' ').replace(/(^|\s)'|'(?=\s|$)/g, ' ').split(/\s+/).filter(Boolean).flatMap(unContract);
   // 縮寫同全寫當一樣：that's = that is、don't = do not（語音辨識有時會寫全寫）
@@ -284,7 +287,7 @@
     return [w];
   }
   function practiceSay(target, out) {
-    if (!SR) { out.innerHTML = '<span class="muted">呢個瀏覽器唔支援語音辨識（iPhone 請用 Safari），可以撳 🔊 跟住讀。</span>'; return; }
+    if (!SR) { out.innerHTML = `<span class="muted">${IOS ? 'iPhone：撳 🔊 聽，跟住大聲讀。想 AI 聽你發音，去 IELTS → 🎤 口語錄音。' : '呢個瀏覽器唔支援語音辨識，可以撳 🔊 跟住讀。'}</span>`; return; }
     const r = new SR(); r.lang = S.settings.accent; r.interimResults = false; r.maxAlternatives = 3;
     out.innerHTML = '<span class="rec"></span> 聽緊…請讀出嚟';
     r.onresult = e => {
@@ -359,29 +362,63 @@
   }
   function beep() { try { const a = new (window.AudioContext || window.webkitAudioContext)(); const o = a.createOscillator(); const g = a.createGain(); o.frequency.value = 880; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(.2, a.currentTime); g.gain.exponentialRampToValueAtTime(.001, a.currentTime + .6); o.start(); o.stop(a.currentTime + .6); } catch (e) { /* 冇聲都唔緊要 */ } }
 
-  // ===== 錄音（口語練習自己聽返）=====
+  // ===== 口語錄音：一撳開始（錄音 + 計時），講完／時間到自動停，交俾 AI 聽 =====
   let REC = null;
-  async function toggleRecord() {
-    const box = $('#recBox');
-    if (REC && REC.mr.state === 'recording') { REC.mr.stop(); return; }
-    if (!navigator.mediaDevices || !window.MediaRecorder) { toast('呢部機唔支援錄音'); return; }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream); const chunks = [];
-      REC = { mr, stream };
-      mr.ondataavailable = e => chunks.push(e.data);
-      mr.onstop = () => {
-        stream.getTracks().forEach(t => t.stop());
-        const url = URL.createObjectURL(new Blob(chunks, { type: mr.mimeType }));
-        if (box) box.innerHTML = `<p class="small muted">聽返自己講：留意停頓、時態、發音</p><audio controls src="${url}" style="width:100%"></audio>`;
-        const b = $('#recBtn'); if (b) b.innerHTML = '🎙️ 再錄';
-      };
-      mr.start();
-      if (box) box.innerHTML = '<span class="rec"></span> 錄音中…撳「停止」完成';
-      const b = $('#recBtn'); if (b) b.innerHTML = '⏹️ 停止';
-    } catch (e) { toast('未能使用咪高峰：' + e.message); }
+  async function spkStart(secs) {
+    if (REC) return;
+    if (!navigator.mediaDevices || !window.MediaRecorder) { toast('呢部機唔支援錄音，可以用下面打字／iPhone 鍵盤 🎤'); return; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { toast('未能使用咪高峰：請喺設定允許 Safari 用咪高峰'); return; }
+    const mr = new MediaRecorder(stream); const chunks = [];
+    REC = { mr, stream, t0: Date.now(), discard: false };
+    mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      const r = REC; REC = null; stopTimer();
+      if (!r || r.discard) return;
+      const blob = new Blob(chunks, { type: mr.mimeType || 'audio/mp4' }); const dur = (Date.now() - r.t0) / 1000;
+      IEL.audio = { url: URL.createObjectURL(blob), blob, dur };
+      if (location.hash === '#ielts' && IEL.tab === 'speak') render();
+      if (dur < 4) { toast('太短喇，最少講幾句先'); return; }
+      aiSpeakAudio();
+    };
+    mr.start();
+    IEL.audio = null;
+    startTimer(secs, '🔴 錄緊音…講完撳「講完」', () => spkStop());
+    render();
   }
-  function stopRecording() { if (REC && REC.mr.state === 'recording') REC.mr.stop(); REC = null; }
+  function spkStop() { if (REC && REC.mr.state === 'recording') REC.mr.stop(); }
+  function stopRecording() { if (REC) { REC.discard = true; if (REC.mr.state === 'recording') REC.mr.stop(); else REC = null; } }
+  // iPhone 錄出嚟係 mp4/aac；轉做 16kHz 單聲道 WAV，Gemini 一定食到，檔案亦細
+  async function toWavB64(blob) {
+    const AC = window.AudioContext || window.webkitAudioContext; const ac = new AC();
+    const buf = await blob.arrayBuffer();
+    const audio = await new Promise((res, rej) => { const p = ac.decodeAudioData(buf, res, rej); if (p && p.then) p.then(res, rej); });
+    if (ac.close) ac.close();
+    const rate = 16000; const len = Math.ceil(audio.duration * rate);
+    const off = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, len, rate);
+    const src = off.createBufferSource(); src.buffer = audio; src.connect(off.destination); src.start();
+    const d = (await off.startRendering()).getChannelData(0);
+    const v = new DataView(new ArrayBuffer(44 + d.length * 2));
+    const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + d.length * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, d.length * 2, true);
+    for (let i = 0; i < d.length; i++) { const x = Math.max(-1, Math.min(1, d[i])); v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7FFF, true); }
+    return b64(new Uint8Array(v.buffer));
+  }
+  function b64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
+  async function aiSpeakAudio() {
+    const box = $('#aiSpkBox'); if (!IEL.audio) return;
+    if (!aiReady()) { if (box) box.innerHTML = `<div class="note">🤖 要 AI 聽你講同評分，先去 <a href="#settings">設定 → AI 評分</a> 貼上 Gemini key。而家可以撳上面 ▶️ 聽返自己。</div>`; return; }
+    if (box) box.innerHTML = '<div class="card center small">🎧 準備錄音檔…</div>';
+    let audio, mime = 'audio/wav';
+    try { audio = await toWavB64(IEL.audio.blob); }
+    catch (e) { audio = b64(new Uint8Array(await IEL.audio.blob.arrayBuffer())); mime = (IEL.audio.blob.type || 'audio/mp4').split(';')[0]; }
+    const list = NE.ielts.speaking[IEL.part]; const it = list[(IEL.idx[IEL.part] || 0) % list.length];
+    const q = IEL.part === 2 ? it.q + ' You should say: ' + it.b.join(', ') : it;
+    runAI('speakAudio', { part: IEL.part, q, audio, mime, dur: Math.round(IEL.audio.dur) }, 'aiSpkBox', 'p' + IEL.part + ':' + (IEL.part === 2 ? it.q : it).slice(0, 60));
+  }
 
   // ===== 學習 session =====
   let SES = null;
@@ -779,20 +816,22 @@
         ${P === 2 ? `<details><summary>💡 中文提示 + 有用字</summary><p class="small">${esc(item.tip)}</p><div class="row">${item.v.map(v => `<span class="pill">${esc(v)}</span>`).join('')}</div></details>` : ''}
       </div>
       <div class="card center">
-        <div class="small muted" id="timerLabel">${TIMER ? esc(TIMER.label) : '計時器'}</div>
+        <div class="small muted" id="timerLabel">${TIMER ? esc(TIMER.label) : P === 2 ? '先準備 1 分鐘，再講 2 分鐘' : '撳開始，大聲答題'}</div>
         <div class="timer" id="timerDisp">${Math.floor(secs / 60)}:${pad(secs % 60)}</div>
-        <div class="grid2" style="margin-top:8px">
-          ${P === 2 ? `<button class="btn-primary" data-act="p2go">⏱️ 準備 1 分鐘</button>` : `<button class="btn-primary" data-act="tgo" data-s="${secs}">⏱️ 開始作答</button>`}
-          <button class="btn-accent" id="recBtn" data-act="rec">🎙️ 錄音</button>
-        </div>
-        <div id="recBox" style="margin-top:10px"></div>
+        ${REC ? `<button class="btn-accent btn-big btn-block" data-act="spkStop" style="margin-top:8px"><span class="rec"></span> 講完，交俾 AI 評分</button>`
+          : `<div class="grid2" style="margin-top:8px;${P === 2 ? '' : 'grid-template-columns:1fr'}">
+              ${P === 2 ? `<button class="btn-ghost" data-act="p2go">⏱️ 準備 1 分鐘</button>` : ''}
+              <button class="btn-primary btn-big" data-act="spkGo" data-s="${secs}">🎙️ ${IEL.audio ? '再答一次' : '開始作答'}</button></div>`}
+        <p class="small muted" style="margin-top:8px">撳一下就開始錄音同計時；講完撳「講完」或者時間到，AI 會聽你錄音：寫低你講咗咩、估 Band、指出文法同發音問題。</p>
+        ${IEL.audio ? `<audio controls src="${IEL.audio.url}" style="width:100%;margin-top:6px"></audio>
+          <button class="chip" data-act="spkRetryAI" style="margin-top:6px">🤖 再叫 AI 評一次</button>` : ''}
+        <div id="aiSpkBox" style="text-align:left"></div>
       </div>
-      <div class="card"><h3>🗣️ 講答案 → 轉文字 → 🤖 AI 評分</h3>
-        <p class="small muted">撳 🎤 開始講，講完再撳一下停。都可以用 iPhone 鍵盤嘅咪高峰，或者直接打字。（同上面錄音分開用）</p>
-        <button class="btn-accent btn-block" data-act="dictate" data-target="spkText" data-lang="en">🎤 開始講</button>
-        <textarea id="spkText" placeholder="你講嘅嘢會出現喺度…" style="min-height:110px;margin-top:8px">${esc(IEL.spk || '')}</textarea>
-        <button class="btn-primary btn-block" style="margin-top:8px" data-act="aiSpeak">🤖 AI 評分（流暢、用字、文法）</button>
-        <div id="aiSpkBox"></div></div>
+      <details class="card"><summary>⌨️ 唔想錄音？打字評分</summary>
+        <p class="small muted">可以打字，或者用 iPhone 鍵盤嘅 🎤 講（會變文字）。AI 只會評用字同文法，評唔到發音。</p>
+        <textarea id="spkText" placeholder="打你嘅答案…" style="min-height:110px;margin-top:8px">${esc(IEL.spk || '')}</textarea>
+        <button class="btn-primary btn-block" style="margin-top:8px" data-act="aiSpeak">🤖 AI 評分（文字）</button>
+        <div id="aiSpkTxtBox"></div></details>
       <div class="grid2"><button class="btn-ghost" data-act="nextSpeak">🔀 換一題</button><button class="btn-primary" data-act="speakDone">✅ 練完呢題</button></div>
       <a class="btn btn-ghost btn-block" style="margin-top:10px" href="#deck/ielts-speak">🗣️ 溫習口語實用句</a>`;
   }
@@ -1076,7 +1115,7 @@
   let DICT = null;
   function dictateInto(el, lang, btn) {
     if (DICT) { DICT.r.stop(); return; }
-    if (!SR) { toast('呢個瀏覽器唔支援，可以用 iPhone 鍵盤上面嘅 🎤 咪高峰輸入'); el.focus(); return; }
+    if (!SR) { toast(IOS ? '撳鍵盤右下／左下嘅 🎤 講，講完撳鍵盤 ⌨️' : '呢個瀏覽器唔支援，可以直接打字'); el.focus(); return; }
     const r = new SR(); r.lang = lang; r.continuous = true; r.interimResults = true;
     const base = el.value ? el.value.trim() + ' ' : '';
     DICT = { r, btn };
@@ -1093,7 +1132,7 @@
   let AIC = {}; try { AIC = JSON.parse(localStorage.getItem(AI_KEY) || '{}') || {}; } catch (e) { AIC = {}; }
   const saveAIC = () => { try { localStorage.setItem(AI_KEY, JSON.stringify(AIC)); } catch (e) { /* 冇得存 */ } };
   const aiReady = () => !!AIC.key;
-  const AI_KIND = { essay: '寫作', speak: '口語', para: '改寫', say: '句子講法' };
+  const AI_KIND = { essay: '寫作', speak: '口語', speakAudio: '口語（錄音）', para: '改寫', say: '句子講法' };
   const AI_PREF = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
   async function aiPickModels() {
     const r = await fetchT('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': AIC.key } }, 8000);
@@ -1113,13 +1152,13 @@
     finally { clearTimeout(t); }
   }
   // 短題（句子、改寫）要快：用 Lite 型號、唔開「思考」、限制長度
-  const AI_LIMIT = { say: { ms: 10000, tok: 500, fast: true }, para: { ms: 10000, tok: 600, fast: true }, speak: { ms: 30000, tok: 1500 }, essay: { ms: 60000, tok: 3000 } };
+  const AI_LIMIT = { speakAudio: { ms: 60000, tok: 2500 }, say: { ms: 10000, tok: 500, fast: true }, para: { ms: 10000, tok: 600, fast: true }, speak: { ms: 30000, tok: 1500 }, essay: { ms: 60000, tok: 3000 } };
   function thinkCfg(m, fast) {
     if (/^gemini-2\.5-flash/.test(m)) return { thinkingBudget: 0 };
     if (/^gemini-3/.test(m)) return { thinkingLevel: fast ? 'minimal' : 'low' };
     return null;
   }
-  async function aiCall(prompt, kind) {
+  async function aiCall(prompt, kind, media) {
     if (!aiReady()) throw new Error('未設定 AI（設定 → AI 評分）');
     if (!navigator.onLine) throw new Error('要有網先用到 AI');
     const L = AI_LIMIT[kind] || AI_LIMIT.speak;
@@ -1131,7 +1170,7 @@
       let tc = AIC.noThink && AIC.noThink[m] ? null : thinkCfg(m, L.fast);
       let r;
       for (let attempt = 0; attempt < 2; attempt++) {
-        const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: tc ? Object.assign({ thinkingConfig: tc }, gen) : gen };
+        const body = { contents: [{ role: 'user', parts: (media ? [{ inline_data: { mime_type: media.mime, data: media.data } }] : []).concat([{ text: prompt }]) }], generationConfig: tc ? Object.assign({ thinkingConfig: tc }, gen) : gen };
         try {
           r = await fetchT(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': AIC.key }, body: JSON.stringify(body)
@@ -1173,6 +1212,11 @@ Return JSON: {"band": estimated band from fluency, vocabulary and grammar only (
 She is practising paraphrasing for IELTS. Original: "${d.src}"
 Her paraphrase: "${d.text}"
 Return JSON: {"score": 0-10, "sameMeaning": true/false, "summary": "Chinese: does it keep the meaning, how different is the wording", "corrections": [{"wrong": "...", "right": "...", "why": "Chinese"} max 4], "better": "one strong paraphrase in English"}`,
+    speakAudio: (d) => `${AI_ROLE}
+The attached audio (${d.dur} seconds) is her spoken answer to IELTS Speaking Part ${d.part}. Listen carefully.
+Question: ${d.q}
+First transcribe exactly what she said (keep her grammar mistakes, mark long pauses as "..."). Then assess like an IELTS examiner, including pronunciation from the audio. If the audio is silent or not English, say so in summary and give band 0.
+Return JSON: {"transcript": "...", "band": overall band (number, 0.5 steps), "criteria": {"Fluency and Coherence": band, "Lexical Resource": band, "Grammatical Range and Accuracy": band, "Pronunciation": band}, "summary": "2-3 sentences in Chinese", "strengths": ["Chinese" max 3], "improve": ["Chinese" max 3], "corrections": [{"wrong": "exact words she said", "right": "better English", "why": "Chinese"} max 6], "pron": [{"word": "word she mispronounced", "tip": "Chinese tip on how to say it"} max 5], "better": "a natural band-7 answer to the same question in English, about ${d.part === 2 ? 180 : 60} words, using her ideas"}`,
     say: (d) => `${AI_ROLE}
 Situation for a nurse in Hong Kong: "${d.ctx}". She wanted to say (Chinese): "${d.zh}". Model English: "${d.model}".
 What she said (speech-to-text or typed): "${d.text}"
@@ -1186,8 +1230,8 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     box.innerHTML = `<div class="card center"><span class="rec" style="background:var(--primary2)"></span> 🤖 AI 批改中… <b id="${boxId}T">0</b> 秒（${fastK ? '通常 2–5 秒' : '通常 5–20 秒'}）</div>`;
     const tick = setInterval(() => { const el = document.getElementById(boxId + 'T'); if (el) el.textContent = Math.round((Date.now() - t0) / 1000); else clearInterval(tick); }, 500);
     try {
-      const res = await aiCall(AI_PROMPTS[kind](data), kind).finally(() => clearInterval(tick));
-      logEv({ k: 'ai', kind, ref: ref || '', band: typeof res.band === 'number' ? res.band : null, score: typeof res.score === 'number' ? res.score : null, input: String(data.text).slice(0, 3000), res });
+      const res = await aiCall(AI_PROMPTS[kind](data), kind, data.audio ? { mime: data.mime, data: data.audio } : null).finally(() => clearInterval(tick));
+      logEv({ k: 'ai', kind, ref: ref || '', band: typeof res.band === 'number' ? res.band : null, score: typeof res.score === 'number' ? res.score : null, input: String(data.audio ? '[錄音 ' + data.dur + ' 秒] ' + (res.transcript || '') : data.text).slice(0, 3000), res });
       if (kind === 'essay' && S.drafts[ref]) S.drafts[ref].ai = { at: Date.now(), res };
       logToday().ex += 3; save(); checkGoal();
       const b = document.getElementById(boxId); if (b) b.innerHTML = aiResultHtml(res);
@@ -1199,9 +1243,11 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     const crit = r.criteria ? Object.entries(r.criteria).map(([k, v]) => `<div class="row between small" style="margin:3px 0"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('') : '';
     const list = (t, xs) => xs && xs.length ? `<h3 style="margin-top:10px">${t}</h3>${xs.map(x => `<p class="small" style="margin:4px 0">• ${esc(x)}</p>`).join('')}` : '';
     return `<div class="card fade-in" style="border-top:6px solid #8b5cf6"><div class="center">${head}</div>
+      ${r.transcript ? `<h3 style="margin-top:6px">📝 AI 聽到你講</h3><div class="ex small">${esc(r.transcript)}</div>` : ''}
       ${r.summary ? `<p>${esc(r.summary)}</p>` : ''}${crit}
       ${list('💪 做得好', r.strengths)}${list('🎯 點樣改進', r.improve)}
       ${r.corrections && r.corrections.length ? `<h3 style="margin-top:10px">✏️ 改正</h3>${r.corrections.map(c => `<p class="small" style="margin:6px 0"><span style="color:var(--bad);text-decoration:line-through">${esc(c.wrong)}</span> → <b style="color:var(--good)">${esc(c.right)}</b><br><span class="muted">${esc(c.why)}</span></p>`).join('')}` : ''}
+      ${r.pron && r.pron.length ? `<h3 style="margin-top:10px">🗣️ 發音要留意</h3>${r.pron.map(x => `<p class="small" style="margin:6px 0"><b>${esc(x.word)}</b> ${spk(x.word)}<br><span class="muted">${esc(x.tip)}</span></p>`).join('')}` : ''}
       ${r.better ? `<h3 style="margin-top:10px">⭐ 參考寫法</h3><div class="ex small">${esc(r.better)} ${spk(r.better)}</div>` : ''}
       <p class="small muted" style="margin-top:8px">AI 評分只供參考，同真考官可能有差距（±0.5–1）。</p></div>`;
   }
@@ -1298,16 +1344,16 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         做完一項會自動打 ✅。完成每日目標會有彩紙 🎉，連續日數 🔥 會加。`)}
       ${sec('📚', '學習卡點用？（唔好淨係睇！）', `
         • 字卡：先睇英文，喺 <b>4 個中文意思入面揀一個</b>，即刻知啱定錯，再睇英文解釋同例句。完全唔識就撳「唔識，直接睇答案」。<br>
-        • 「實用句子」字庫相反：先睇中文，<b>撳 🎤 用英文講出嚟</b>（或者打），揭答案會逐個字對，綠色 = 啱，紅色 = 漏咗／錯咗。仲可以撳「🤖 AI 睇下我講法啱唔啱」，因為唔同講法都可以啱。<br>
+        • 「實用句子」字庫相反：先睇中文，<b>用英文講出嚟</b>：iPhone 撳格仔，再撳鍵盤上嘅 🎤 講（或者直接打）。揭答案會逐個字對，綠色 = 啱，紅色 = 漏咗／錯咗。講法唔同可以撳「🤖 問 AI」。<br>
         • 記住：<b>自己諗、自己講</b>先會記得，淨係睇答案好快會唔記得。<br>
         • 揭咗之後<b>誠實揀</b>：唔記得（今日會再出）／難／記得／好易（會隔耐啲先再出）。<br>
-        • 🔊 聽讀音　🎤 跟讀（會話你讀得準唔準）　🔎 查字典　☆ 收藏　💌 對呢張卡有意見。<br>
+        • 🔊 聽讀音　🎤 跟讀（電腦會評；iPhone 就聽完跟住讀）　🔎 查字典　☆ 收藏　💌 對呢張卡有意見。<br>
         • 基本字太易？去「字庫」揀 <b>進階</b> 字庫：🔍 臨床評估、🧪 進階程序、⚗️ 藥理、🧬 進階疾病、🛡️ 感染控制、🧓 長者護理，同埋 🏨 病房日常句子、👩‍⚕️ 同同事溝通。入去字庫頁撳「學 10 個」就得。`)}
       ${sec('✏️', '測驗', `
         「測驗」分頁：快速測驗、弱項特訓、串字、聽力、縮寫挑戰。<b>答錯嘅字會自動加入今日溫習</b>，所以錯咗唔緊要，錯咗先記得牢。`)}
       ${sec('🎓', 'IELTS 練習', `
         「IELTS」分頁：<br>
-        • 🎤 <b>口語</b>：Part 1/2/3 題目、計時、錄音（聽返自己）。仲可以撳「🎤 開始講」轉做文字，再撳「🤖 AI 評分」，會估 Band、改文法、俾參考答案。<br>
+        • 🎤 <b>口語</b>：Part 1/2/3 題目。撳「🎙️ 開始作答」就同時錄音同計時，講完撳「講完」（或者時間到自動停），<b>AI 會聽你把聲</b>：寫低你講咗咩、估 Band（四項，包括發音）、改文法、指出邊個字讀得唔準，再俾 Band 7 參考答案。Part 2 可以先撳「準備 1 分鐘」，準備完會自動開始錄音。唔想錄音可以打字評分。<br>
         • ✍️ <b>寫作</b>：Task 1/2 題目，計時 + 字數 + 自動儲存草稿 + 結構建議。寫完撳「🤖 AI 批改」：估 Band（四項準則）、改錯、建議點改進。<br>
         • 📖 <b>閱讀</b>：True/False/Not Given、填字、選擇題，交卷有解釋同估分。<br>
         • 🎧 <b>聽力</b>：聽對話填表（真考試只播一次）＋ ✍️ 聽寫（聽一句打一句，練串字）。<br>
@@ -1393,6 +1439,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     stopDictate();
     const raw = (location.hash || '#home').slice(1); const [r, arg] = raw.split('/');
     const route = V[r] ? r : 'home';
+    if (REC && route !== 'ielts') { stopRecording(); stopTimer(); }
     if (!['quizrun', 'study', 'listen', 'dict'].includes(route)) { if (window.speechSynthesis) speechSynthesis.cancel(); }
     document.body.classList.toggle('focus', ['study', 'quizrun', 'write', 'read', 'listen', 'dict'].includes(route));
     const tabFor = { deck: 'library', quizrun: 'quiz', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', settings: 'home', study: 'home', feedback: 'home', help: 'home', plan: 'home' }[route] || route;
@@ -1453,7 +1500,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       const text = ($('#spkText').value || '').trim(); if (countWords(text) < 5) return toast('講多少少先（最少一兩句）');
       const list = NE.ielts.speaking[IEL.part]; const it = list[(IEL.idx[IEL.part] || 0) % list.length];
       const q = IEL.part === 2 ? it.q + ' You should say: ' + it.b.join(', ') : it;
-      stopDictate(); runAI('speak', { part: IEL.part, q, text }, 'aiSpkBox', 'p' + IEL.part + ':' + (IEL.part === 2 ? it.q : it).slice(0, 60));
+      stopDictate(); runAI('speak', { part: IEL.part, q, text }, 'aiSpkTxtBox', 'p' + IEL.part + ':' + (IEL.part === 2 ? it.q : it).slice(0, 60));
     },
     aiEssay: el => {
       const id = el.dataset.id; const w = NE.ielts.writing.find(x => x.id === id); const d = S.drafts[id] || { text: '' };
@@ -1593,15 +1640,19 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     },
     nextQ: () => { QZ.i++; QZ.answered = false; QZ.hint = false; QZ.typed = null; render(); },
     ieltsTab: el => { IEL.tab = el.dataset.tab; stopTimer(); stopRecording(); render(); },
-    part: el => { IEL.part = Number(el.dataset.p); stopTimer(); render(); },
-    nextSpeak: () => { IEL.spk = ''; IEL.idx[IEL.part] = (IEL.idx[IEL.part] || 0) + 1 + Math.floor(Math.random() * 3); stopTimer(); stopRecording(); render(); },
+    part: el => { IEL.part = Number(el.dataset.p); stopTimer(); stopRecording(); IEL.audio = null; render(); },
+    nextSpeak: () => { IEL.spk = ''; IEL.audio = null; IEL.idx[IEL.part] = (IEL.idx[IEL.part] || 0) + 1 + Math.floor(Math.random() * 3); stopTimer(); stopRecording(); render(); },
     task: el => { IEL.task = Number(el.dataset.t); render(); },
-    tgo: el => startTimer(Number(el.dataset.s), '作答中…'),
-    p2go: () => startTimer(60, '準備時間（寫低關鍵字）', () => { toast('🎤 開始講！2 分鐘'); startTimer(120, '講緊…（最少講夠 1 分鐘）'); }),
-    rec: () => toggleRecord(),
+    spkGo: el => spkStart(Number(el.dataset.s)),
+    spkStop: () => spkStop(),
+    spkRetryAI: () => aiSpeakAudio(),
+    p2go: () => {
+      // 先攞咪高峰權限（要喺撳掣嗰下攞，iPhone 先肯），準備完自動開始錄音
+      if (navigator.mediaDevices) navigator.mediaDevices.getUserMedia({ audio: true }).then(st => st.getTracks().forEach(t => t.stop())).catch(() => {});
+      startTimer(60, '準備時間（寫低關鍵字）', () => { toast('🎤 開始講！最少 1 分鐘'); spkStart(120); }); },
     speakDone: () => {
       const list = NE.ielts.speaking[IEL.part]; const it = list[(IEL.idx[IEL.part] || 0) % list.length];
-      logEv({ k: 'speak', p: IEL.part, q: (IEL.part === 2 ? it.q : it).slice(0, 100), rec: REC ? 1 : 0 });
+      logEv({ k: 'speak', p: IEL.part, q: (IEL.part === 2 ? it.q : it).slice(0, 100), rec: IEL.audio ? 1 : 0 }); IEL.audio = null;
       S.counters.speak++; logToday().ex += 3; save(); checkGoal(); toast('👏 練完一題！+3'); A.nextSpeak(); },
     essayDone: el => {
       const id = el.dataset.id; const d = S.drafts[id] || { text: '' }; const w = NE.ielts.writing.find(x => x.id === id);

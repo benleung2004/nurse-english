@@ -14,7 +14,9 @@
     vital: '#12a39a', body: '#ef5a5a', symptoms: '#f59e0b', conditions: '#8b5cf6', care: '#0ea5e9', meds: '#ff5c8a',
     equip: '#64748b', abbr: '#3b82f6', roots: '#22b07d', 'ph-patient': '#12a39a', 'ph-pain': '#ef5a5a',
     'ph-handover': '#7c3aed', 'ph-family': '#ff8a3d', 'ielts-health': '#16a34a', 'ielts-awl': '#2563eb',
-    'ielts-speak': '#db2777', mine: '#f59e0b'
+    'ielts-speak': '#db2777', mine: '#f59e0b',
+    'adv-assess': '#0d9488', 'adv-proc': '#0284c7', 'adv-pharm': '#e11d48', 'adv-cond': '#7c3aed', 'adv-safety': '#ea580c',
+    'adv-geri': '#65a30d', 'ph-ward': '#0891b2', 'ph-team': '#c026d3'
   };
   const CATS = [['medical', '🩺 醫護字彙'], ['talk', '💬 實用句子（中→英）'], ['ielts', '🎓 IELTS'], ['mine', '⭐ 我的生字']];
   const QUOTES = [
@@ -383,7 +385,7 @@
     const L = logToday();
     if (!SES.seen.has(id)) { SES.seen.add(id); if (!prev) L.n++; else L.r++; }
     if (g === 0) { SES.again++; SES.queue.splice(Math.min(SES.i + 4, SES.queue.length), 0, id); } else SES.good++;
-    SES.i++; SES.revealed = false; SES.showZh = false; SES.hint = false; SES.rec = null; SES.typed = ''; SES.anim = 'enter';
+    SES.i++; SES.revealed = false; SES.showZh = false; SES.hint = false; SES.rec = null; SES.typed = ''; SES.ch = null; SES.anim = 'enter';
     save(); checkGoal(); render();
   }
 
@@ -467,8 +469,16 @@
     const recallBox = SES.revealed ? '' : `<div class="row" style="flex-wrap:nowrap;margin-top:4px"><input id="recallIn" value="${esc(SES.typed || '')}" autocomplete="off" autocapitalize="${dk.say ? 'sentences' : 'none'}" placeholder="${dk.say ? '🎤 講出嚟或者打英文…' : '打中文意思（可選）'}">
       <button class="speak" data-act="dictate" data-target="recallIn" data-lang="${dk.say ? 'en' : 'zh'}" aria-label="講">🎤</button></div>
       <div class="small muted">${dk.say ? '先自己講／打，再對答案，會有分數' : '答咗先揭，會幫你對答案'}</div>`;
+    // 字卡：4 揀 1 中文意思（唔使打字、唔使 AI）
+    if (!dk.say && (!SES.ch || SES.ch.pos !== SES.i)) SES.ch = { pos: SES.i, ids: makeChoices(c, 'mcZh') };
+    const mcBox = dk.say ? '' : `<div class="small muted" style="margin-top:4px">${SES.revealed ? '' : '揀啱嘅中文意思：'}</div><div class="choices">${SES.ch.ids.map(id => {
+      let cls = ''; if (SES.revealed) { if (id === c.id) cls = 'right'; else if (SES.rec && id === SES.rec.picked) cls = 'wrong'; }
+      return `<button class="${cls}" data-act="recPick" data-id="${esc(id)}" ${SES.revealed ? 'disabled' : ''}>${esc(BY[id].zh)}</button>`;
+    }).join('')}</div>`;
     let recallRes = '';
-    if (SES.revealed && SES.rec) {
+    if (SES.revealed && SES.rec && SES.rec.mc) {
+      recallRes = `<div class="fb ${SES.rec.ok ? 'ok' : 'no'} small"><b>${SES.rec.ok ? '✅ 啱！' : '❌ 唔啱，記住正確答案'}</b>${SES.rec.ok ? '' : '　建議揀「唔記得」'}</div>`;
+    } else if (SES.revealed && SES.rec) {
       const R = SES.rec;
       recallRes = R.m
         ? `<div class="fb ${R.sc >= .85 ? 'ok' : 'no'} small"><b>你講：</b>${esc(R.v)}<br><b>${Math.round(R.sc * 100)}%</b>　${R.m.words.map((w, i) => `<span style="${R.m.hit.has(i) ? 'color:var(--good)' : 'color:var(--bad);text-decoration:underline;font-weight:800'}">${esc(w)}</span>`).join(' ')}
@@ -481,12 +491,10 @@
     } else {
       front = `<div class="row" style="align-items:flex-start"><div class="term grow">${esc(c.en)}</div>${spk(speakText(c))}</div>
         ${dk.abbr ? '<div class="small muted">呢個縮寫代表咩？</div>' : dk.roots ? '<div class="small muted">呢個字根／字首字尾係咩意思？</div>' : ''}
-        ${!SES.revealed ? (SES.hint ? `<div class="zh fade-in">${esc(c.zh)}</div>` : `<div><button class="reveal-zh" data-act="hint">💡 唔肯定？睇中文提示</button></div>`) : ''}
-        ${SES.hint ? '' : recallBox}`;
+        ${mcBox}`;
       if (SES.revealed) back = `<div class="fade-in" style="display:flex;flex-direction:column;gap:10px">
         <div class="def"><b>${esc(c.def)}</b></div>
-        ${showZh ? `<div class="zh">${esc(c.zh)}</div>` : `<div><button class="reveal-zh" data-act="showZh">顯示中文 🀄</button></div>`}
-        ${c.ex ? `<div class="ex"><div class="row" style="align-items:flex-start;flex-wrap:nowrap"><div class="grow">${esc(c.ex)}</div>${dk.roots ? '' : spk(c.ex)}</div>${showZh && c.exZh ? `<div class="zhline">${esc(c.exZh)}</div>` : ''}</div>` : ''}
+        ${c.ex ? `<div class="ex"><div class="row" style="align-items:flex-start;flex-wrap:nowrap"><div class="grow">${esc(c.ex)}</div>${dk.roots ? '' : spk(c.ex)}</div>${c.exZh ? `<div class="zhline">${esc(c.exZh)}</div>` : ''}</div>` : ''}
       </div>`;
     }
     const extra = SES.revealed ? `
@@ -501,7 +509,8 @@
       <div id="sayOut" class="heard"></div>` : '';
     const grades = SES.revealed ? `<div class="grades">
       ${[['唔記得', 0], ['難', 1], ['記得', 2], ['好易', 3]].map(([t, g]) => `<button class="g${g}" data-act="grade" data-g="${g}">${t}<small>${ivLabel(nextState(prev, g).i)}</small></button>`).join('')}
-      </div>` : `<button class="btn-primary btn-big btn-block" data-act="reveal">${dk.say ? '睇答案' : '揭曉答案'} 👀</button>`;
+      </div>` : dk.say ? `<button class="btn-primary btn-big btn-block" data-act="reveal">睇答案 👀</button>`
+        : `<button class="btn-ghost btn-block" data-act="reveal">唔識，直接睇答案 👀</button>`;
     const anim = SES.anim; SES.anim = '';
     return `
     <div class="row" style="flex-wrap:nowrap;margin-bottom:12px">
@@ -740,7 +749,7 @@
     else body = tipsHtml();
     return `<h1>🎓 <span class="grad-text">IELTS</span> 溫習</h1>
       <p class="muted small">題目為原創練習題（健康／工作話題為主），唔係官方真題。</p>
-      <div class="tabs" style="margin:12px 0">${tabs.map(([k, t]) => `<button class="chip ${IEL.tab === k ? 'on' : ''}" data-act="ieltsTab" data-tab="${k}">${t}</button>`).join('')}</div>
+      <div class="tabs" style="margin:12px 0">${tabs.map(([k, t]) => `<button class="chip ${IEL.tab === k ? 'on' : ''}" data-act="ieltsTab" data-tab="${k}"><span class="ti">${t.split(' ')[0]}</span>${t.split(' ')[1]}</button>`).join('')}</div>
       ${body}`;
   };
   function speakHtml() {
@@ -1196,11 +1205,12 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 星期一：閱讀　星期二：聽力 + 聽寫　星期三：寫作　星期四：口語 + 改寫　星期五：文法　星期六：閱讀 + 聽力　星期日：弱項特訓 + 口語<br>
         做完一項會自動打 ✅。完成每日目標會有彩紙 🎉，連續日數 🔥 會加。`)}
       ${sec('📚', '學習卡點用？（唔好淨係睇！）', `
-        • 先睇英文，<b>喺格仔打中文意思</b>（或者撳 🎤 講），再撳「揭曉答案」，app 會話你啱唔啱。唔肯定可以撳「💡 中文提示」。<br>
+        • 字卡：先睇英文，喺 <b>4 個中文意思入面揀一個</b>，即刻知啱定錯，再睇英文解釋同例句。完全唔識就撳「唔識，直接睇答案」。<br>
         • 「實用句子」字庫相反：先睇中文，<b>撳 🎤 用英文講出嚟</b>（或者打），揭答案會逐個字對，綠色 = 啱，紅色 = 漏咗／錯咗。仲可以撳「🤖 AI 睇下我講法啱唔啱」，因為唔同講法都可以啱。<br>
         • 記住：<b>自己諗、自己講</b>先會記得，淨係睇答案好快會唔記得。<br>
         • 揭咗之後<b>誠實揀</b>：唔記得（今日會再出）／難／記得／好易（會隔耐啲先再出）。<br>
-        • 🔊 聽讀音　🎤 跟讀（會話你讀得準唔準）　🔎 查字典　☆ 收藏　💌 對呢張卡有意見。`)}
+        • 🔊 聽讀音　🎤 跟讀（會話你讀得準唔準）　🔎 查字典　☆ 收藏　💌 對呢張卡有意見。<br>
+        • 基本字太易？去「字庫」揀 <b>進階</b> 字庫：🔍 臨床評估、🧪 進階程序、⚗️ 藥理、🧬 進階疾病、🛡️ 感染控制、🧓 長者護理，同埋 🏨 病房日常句子、👩‍⚕️ 同同事溝通。入去字庫頁撳「學 10 個」就得。`)}
       ${sec('✏️', '測驗', `
         「測驗」分頁：快速測驗、弱項特訓、串字、聽力、縮寫挑戰。<b>答錯嘅字會自動加入今日溫習</b>，所以錯咗唔緊要，錯咗先記得牢。`)}
       ${sec('🎓', 'IELTS 練習', `
@@ -1317,6 +1327,13 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     learnOne: el => { closeModal(); startSession({ ids: [el.dataset.id] }); },
     studyDeck: el => startSession({ deck: el.dataset.deck, newCount: 10 }),
     hint: () => { SES.hint = true; render(); },
+    recPick: el => {
+      if (SES.revealed) return;
+      const c = BY[SES.queue[SES.i]]; const ok = el.dataset.id === c.id;
+      SES.rec = { mc: 1, ok, picked: el.dataset.id };
+      logEv({ k: 'recall', id: c.id, sc: ok ? 1 : 0, a: el.dataset.id, mc: 1, ms: Date.now() - (SES.shownAt || Date.now()) }); save();
+      SES.revealed = true; SES.anim = ''; render();
+    },
     reveal: () => {
       stopDictate();
       const inp = $('#recallIn'); const v = inp ? inp.value.trim() : '';

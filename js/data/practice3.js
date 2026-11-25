@@ -83,7 +83,7 @@
   ] });
 
   L.push({ id: 'l-museum', title: 'Museum tour information', zh: '博物館導賞介紹', part: 'Section 2 筆記', lines: [
-    ['A', 'Welcome to the Hong Kong Museum of Medical Sciences. The building opened in 1906 as a bacteriology institute.'],
+    ['A', 'Welcome to the City Museum of Medical History. The building opened in 1906 as a bacteriology institute.'],
     ['A', 'The tour today will last about 45 minutes, and we\'ll visit three galleries.'],
     ['A', 'We start in the Plague Gallery, which explains how the city fought the outbreak of 1894.'],
     ['A', 'Next is the Traditional Chinese Medicine room, where you can see over 200 herbal specimens.'],

@@ -696,7 +696,7 @@
       ${starred.length ? `<div class="card tight deckrow" data-act="openStarred" style="--dc-soft:rgba(255,193,7,.2)"><div class="ic">⭐</div><div class="grow"><b>收藏</b><div class="small muted">${starred.length} 個</div></div><span>›</span></div>` : ''}
       ${groups}`;
   };
-  function subjAlso(g) { const ids = new Set((NE.subjAlso || {})[g] || []); return ALL.filter(c => ids.has(c.id)); }
+  function subjAlso(g) { const ids = new Set(((NE.subjAlso || {})[g] || []).concat((NE.ieltsAlso || {})[g] || [])); return ALL.filter(c => ids.has(c.id)); }
   function deckRow(d) {
     const cs = ALL.filter(c => c.d === d.id);
     const seen = cs.filter(c => S.cards[c.id]).length, mast = cs.filter(c => S.cards[c.id] && S.cards[c.id].i >= 21).length;
@@ -891,7 +891,13 @@
     else if (IEL.tab === 'vocab') body = `<div class="card tight"><b>🎓 IELTS 字卡同測驗</b>
         <button class="btn-primary btn-block" style="margin-top:8px" data-act="startToday" data-track="ielts">開始 IELTS 字卡（溫習 ${dueCount(null, 'ielts')} · 新字 ${newIdsFor('ielts', newLeftToday('ielts')).length}）→</button>
         <div class="row" style="margin-top:8px"><button class="chip" data-act="quiz" data-kind="learned" data-track="ielts">✏️ 測驗</button><button class="chip" data-act="quiz" data-kind="weak" data-track="ielts">🎯 弱項</button><button class="chip" data-act="quiz" data-kind="spell" data-track="ielts">⌨️ 串字</button><button class="chip" data-act="quiz" data-kind="listen" data-track="ielts">🎧 聽力</button></div></div>
-      ${DECKS.filter(d => d.cat === 'ielts').map(deckRow).join('')}
+      ${(NE.ieltsTopics || []).length ? '<h2>🌏 話題字彙（按話題）</h2>' : ''}${(NE.ieltsTopics || []).map(([g, title]) => {
+        const ds = DECKS.filter(d => d.grp === g); if (!ds.length) return '';
+        const n = ALL.filter(c => ds.some(d => d.id === c.d)).length; const also = subjAlso(g);
+        const alsoRow = also.length ? `<div class="card tight deckrow" data-act="openSubjAlso" data-grp="${g}"><div class="ic">📎</div><div class="grow"><b>其他字庫相關字</b><div class="small muted">${also.length} 個</div></div><span>›</span></div>` : '';
+        return `<details class="subj"><summary><b>${title}</b> <span class="small muted">${n + also.length} 張</span></summary>${ds.map(deckRow).join('')}${alsoRow}</details>`;
+      }).join('')}
+      <h2>📚 其他 IELTS 字庫</h2>${DECKS.filter(d => d.cat === 'ielts' && !d.grp).map(deckRow).join('')}
       <h2>🔗 連接詞速查</h2>${linkingHtml()}`;
     else body = tipsHtml();
     return `<h1>🎓 <span class="grad-text">IELTS</span> 溫習</h1>
@@ -1795,7 +1801,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     hideInstall: () => { S.settings.hideInstall = true; save(); render(); },
     detail: el => openModal(detailHtml(BY[el.dataset.id])),
     closeModal: () => closeModal(),
-    openSubjAlso: el => { const g = el.dataset.grp; const t = ((NE.subjects || []).find(s => s[0] === g) || [, ''])[1];
+    openSubjAlso: el => { const g = el.dataset.grp; const t = ((NE.subjects || []).concat(NE.ieltsTopics || []).find(s => s[0] === g) || [, ''])[1];
       openModal(`<h2 style="margin-top:0">📎 ${esc(t)}：其他字庫相關字</h2><p class="small muted">呢啲字喺基本／進階字庫入面，溫習會跟返原本字庫。</p>${cardList(subjAlso(g))}<button class="btn-ghost btn-block" style="margin-top:12px" data-act="closeModal">關閉</button>`); },
     openStarred: () => openModal(`<h2 style="margin-top:0">⭐ 收藏</h2>${cardList(ALL.filter(c => S.stars[c.id]))}<button class="btn-ghost btn-block" style="margin-top:12px" data-act="closeModal">關閉</button>`),
     addWord: () => openModal(wordForm()),

@@ -456,7 +456,7 @@
   function b64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
   async function aiSpeakAudio() {
     const box = $('#aiSpkBox'); if (!IEL.audio) return;
-    if (!aiReady()) { if (box) box.innerHTML = `<div class="note">🤖 要 AI 聽你講同評分，先去 <a href="#settings">設定 → AI 評分</a> 貼上 Gemini key。而家可以撳上面 ▶️ 聽返自己。</div>`; return; }
+    if (!aiReady()) { if (box) box.innerHTML = `<div class="note">🤖 要 AI 聽你講同評分，先去 <a href="#settings">設定 → AI 評分</a> 貼上 AI key。而家可以撳上面 ▶️ 聽返自己。</div>`; return; }
     if (box) box.innerHTML = '<div class="card center small">🎧 準備錄音檔…</div>';
     let audio, mime = 'audio/wav';
     try { audio = await toWavB64(IEL.audio.blob); }
@@ -1037,11 +1037,12 @@
       <h2>⏰ 每日提醒</h2>
       <div class="card"><p class="small">下載一個每日重複嘅日曆提醒（.ics），加入 iPhone／Android 日曆，到鐘就會彈通知。</p>
         <div class="row" style="flex-wrap:nowrap"><input type="time" data-set="remind" value="${esc(s.remind)}"><button class="btn-primary" data-act="ics">下載提醒</button></div></div>
-      <h2>🤖 AI 評分（免費 Gemini）</h2>
-      <div class="card"><p class="small">寫作、口語、改寫、實用句可以叫 AI 評分同改錯。用 Google 免費 Gemini API key，每日有免費額度。Key 只存喺呢部手機。</p>
-        <p class="small muted">⚠️ 免費版 Google 可能會用送出嘅內容改進產品：唔好寫病人資料或者個人私隱。</p>
-        <p class="small" id="aiStatus" style="font-weight:700">${aiReady() ? '✅ 已設定' + (AIC.models ? '：' + esc(AIC.models[0]) : '') : '未設定'}</p>
-        <label>Gemini API key</label><input id="aiKeyIn" type="password" autocomplete="off" autocapitalize="none" placeholder="${aiReady() ? '已設定（想換先填）' : 'AIza…（由 Ben 提供）'}">
+      <h2>🤖 AI 評分</h2>
+      <div class="card"><p class="small">寫作、口語錄音、句子錄音、改寫都可以叫 AI 評分同改錯。Key 只存喺呢部手機。</p>
+        <p class="small muted">⚠️ 錄音同文字會傳去 AI 公司處理：唔好講／寫病人資料或者個人私隱。</p>
+        <label>AI 供應商</label><select id="aiProvIn"><option value="qwen" ${aiProv() === 'qwen' ? 'selected' : ''}>阿里雲 Qwen（建議：香港用得、聽到錄音、好平）</option><option value="gemini" ${aiProv() === 'gemini' ? 'selected' : ''}>Google Gemini（香港用唔到）</option></select>
+        <p class="small" id="aiStatus" style="font-weight:700">${aiReady() ? '✅ 已設定：' + (aiProv() === 'qwen' ? 'Qwen' + (AIC.qModel ? '（' + esc(AIC.qModel) + '）' : '') : 'Gemini' + (AIC.models ? '（' + esc(AIC.models[0]) + '）' : '')) : '未設定'}</p>
+        <label>API key</label><input id="aiKeyIn" type="password" autocomplete="off" autocapitalize="none" placeholder="${aiReady() ? '已設定（想換先填）' : 'sk-…（由 Ben 提供）'}">
         <div class="grid2" style="margin-top:10px"><button class="btn-primary" data-act="aiSave">儲存並測試</button>${aiReady() ? '<button class="btn-ghost" data-act="aiRemove">移除</button>' : '<span></span>'}</div>${aiUsageHtml()}</div>
       <h2>☁️ 同步俾 Ben 睇（可選）</h2>
       <div class="card"><p class="small">連接之後，學習記錄同意見箱會自動上載去 Ben 嘅<b>私人</b> GitHub repo，佢可以叫 Claude 分析你嘅強弱項、調整練習。Token 只存喺呢部手機。</p>
@@ -1281,6 +1282,17 @@
   }
   function aiUsageHtml(short) {
     if (!aiReady()) return '';
+    if (aiProv() === 'qwen') {
+      const u = qUse(); const T = AIC.qTot; const tot = T.in + T.out;
+      const left = Math.max(0, QWEN_FREE - tot); const cost = (T.in * QWEN_PRICE.in + T.out * QWEN_PRICE.out) / 1e6;
+      if (short) return `<p class="small muted" style="margin-top:6px">📊 今日用咗 ${u.n} 次 AI · 免費額度估計剩 ${Math.round(left / QWEN_FREE * 100)}% · <a href="#settings">睇用量</a></p>`;
+      return `<div class="card tight" style="margin-top:10px"><b>📊 AI 用量（Qwen）</b>
+        <div class="row between small" style="margin:4px 0"><span>今日</span><span>${u.n} 次 · ${u.tok.toLocaleString()} token</span></div>
+        <div class="row between small" style="margin:4px 0"><span>由 ${esc(T.since)} 起總共</span><span>${tot.toLocaleString()} token</span></div>
+        <div class="row between small" style="margin:4px 0"><span>免費額度（100 萬 token，90 日）</span><b style="color:${left < 100000 ? 'var(--warn)' : 'var(--good)'}">估計剩 ${left.toLocaleString()}</b></div>
+        <div class="row between small" style="margin:4px 0"><span>如果要俾錢，大約</span><span>US$${cost.toFixed(3)}（約 HK$${(cost * 7.8).toFixed(2)}）</span></div>
+        <p class="small muted" style="margin-top:6px">App 只計呢部手機用嘅量。最準：<a href="https://modelstudio.console.alibabacloud.com/" target="_blank" rel="noopener">阿里雲 Model Studio ↗</a></p></div>`;
+    }
     aiUse('_'); delete AIC.usage.m._;
     const ms = (AIC.models || []).slice(); Object.keys(AIC.usage.m).forEach(m => { if (!ms.includes(m)) ms.push(m); });
     const total = Object.values(AIC.usage.m).reduce((a, u) => a + u.n, 0);
@@ -1296,9 +1308,64 @@
       <p class="small muted" style="margin-top:6px">今日總共 ${total} 次。${aiResetText()}重置。<br>Google 唔會直接話剩幾多次，所以 app 自己數；第一次爆額時會記低 Google 講嘅上限，之後就估到剩幾多。一個型號爆額會自動轉用下一個。<br>
       官方用量：<a href="https://aistudio.google.com/usage" target="_blank" rel="noopener">Google AI Studio ↗</a>（用開 key 嗰個 Google 帳號登入）</p></div>`;
   }
+  // ===== AI 供應商：Qwen（阿里雲，香港用得、聽到錄音）或 Gemini（香港用唔到）=====
+  const aiProv = () => AIC.provider || (AIC.key && AIC.key.startsWith('AIza') ? 'gemini' : 'qwen');
+  const QWEN_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions';
+  const QWEN_MODELS = ['qwen3.8-omni-flash', 'qwen3.5-omni-flash', 'qwen3-omni-flash'];
+  const QWEN_FREE = 1000000; // 新帳號每個型號 100 萬 token（90 日）
+  const QWEN_PRICE = { in: 0.15, out: 0.47 }; // US$／100 萬 token（qwen3.8-omni-flash 國際版）
+  function qUse() {
+    const d = today(); if (!AIC.qDay || AIC.qDay.day !== d) AIC.qDay = { day: d, n: 0, tok: 0 };
+    if (!AIC.qTot) AIC.qTot = { in: 0, out: 0, since: d }; return AIC.qDay;
+  }
   async function aiCall(prompt, kind, media) {
     if (!aiReady()) throw new Error('未設定 AI（設定 → AI 評分）');
     if (!navigator.onLine) throw new Error('要有網先用到 AI');
+    return aiProv() === 'qwen' ? qwenCall(prompt, kind, media) : geminiCall(prompt, kind, media);
+  }
+  async function qwenCall(prompt, kind, media) {
+    const L = AI_LIMIT[kind] || AI_LIMIT.speak;
+    const models = AIC.qModel ? [AIC.qModel].concat(QWEN_MODELS.filter(m => m !== AIC.qModel)) : QWEN_MODELS;
+    let last = '';
+    for (const m of models) {
+      const content = [];
+      if (media) content.push({ type: 'input_audio', input_audio: { data: 'data:;base64,' + media.data, format: media.mime === 'audio/wav' ? 'wav' : (media.mime.split('/')[1] || 'mp3').replace('mp4', 'm4a') } });
+      content.push({ type: 'text', text: prompt });
+      const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), L.ms);
+      try {
+        const r = await fetch(QWEN_URL, { method: 'POST', signal: ac.signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + AIC.key },
+          body: JSON.stringify({ model: m, messages: [{ role: 'user', content }], stream: true, stream_options: { include_usage: true }, modalities: ['text'], max_tokens: L.tok, temperature: 0.3 }) });
+        if (!r.ok) {
+          const t = await r.text().catch(() => '');
+          if (r.status === 401 || /InvalidApiKey/i.test(t)) throw Object.assign(new Error('API key 無效（要用 Singapore 地區嘅 key）'), { fatal: true });
+          if (/Arrearage|overdue|Unpurchased|FreeTierOnly|free tier/i.test(t)) throw Object.assign(new Error('免費額度用完或者戶口冇錢：去阿里雲增值（好平）'), { fatal: true });
+          if (r.status === 429) { last = '用得太密，等一分鐘再試'; continue; }
+          if (r.status === 404 || /model.*(not|exist)|InvalidModel/i.test(t)) { last = '型號唔存在'; continue; }
+          last = 'Qwen 回應 ' + r.status; continue;
+        }
+        const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '', txt = '', usage = null;
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true }); const lines = buf.split('\n'); buf = lines.pop();
+          for (const ln of lines) {
+            if (!ln.startsWith('data:')) continue;
+            const d = ln.slice(5).trim(); if (!d || d === '[DONE]') continue;
+            try { const j = JSON.parse(d); const c = j.choices && j.choices[0]; if (c && c.delta && c.delta.content) txt += c.delta.content; if (j.usage) usage = j.usage; } catch (e) { /* 唔完整 */ }
+          }
+        }
+        const u = qUse(); u.n++;
+        if (usage) { u.tok += usage.total_tokens || 0; AIC.qTot.in += usage.prompt_tokens || 0; AIC.qTot.out += usage.completion_tokens || 0; }
+        AIC.qModel = m; saveAIC();
+        const jsonTxt = (txt.match(/\{[\s\S]*\}/) || [''])[0];
+        try { const out = JSON.parse(jsonTxt); out._model = m; return out; } catch (e) { last = 'AI 回覆格式有問題，再試一次'; }
+      } catch (e) {
+        if (e.fatal) throw e;
+        last = e.name === 'AbortError' ? 'AI 太慢（超時），試下再撳一次' : '網絡有問題';
+      } finally { clearTimeout(timer); }
+    }
+    throw new Error(last || 'AI 暫時用唔到');
+  }
+  async function geminiCall(prompt, kind, media) {
     const L = AI_LIMIT[kind] || AI_LIMIT.speak;
     let models = AIC.models && AIC.models.length ? AIC.models : await aiPickModels();
     if (L.fast) models = models.filter(m => /lite/.test(m)).concat(models.filter(m => !/lite/.test(m)));
@@ -1375,7 +1442,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
   };
   async function runAI(kind, data, boxId, ref) {
     const box = document.getElementById(boxId); if (!box) return;
-    if (!aiReady()) { box.innerHTML = `<div class="note">🤖 未設定 AI。去 <a href="#settings">設定 → AI 評分</a> 貼上免費 Gemini key（Ben 會幫你）。</div>`; return; }
+    if (!aiReady()) { box.innerHTML = `<div class="note">🤖 未設定 AI。去 <a href="#settings">設定 → AI 評分</a> 貼上 AI key（Ben 會幫你）。</div>`; return; }
     const t0 = Date.now(); const fastK = (AI_LIMIT[kind] || {}).fast;
     box.innerHTML = `<div class="card center"><span class="rec" style="background:var(--primary2)"></span> 🤖 AI 批改中… <b id="${boxId}T">0</b> 秒（${fastK ? '通常 2–5 秒' : '通常 5–20 秒'}）</div>`;
     const tick = setInterval(() => { const el = document.getElementById(boxId + 'T'); if (el) el.textContent = Math.round((Date.now() - t0) / 1000); else clearInterval(tick); }, 500);
@@ -1523,8 +1590,9 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 分 6 個階段：準備 → 摸底 → 補技巧 → 模擬考 → 衝刺 → 考試當日。App 會按考試日期標示「而家做呢個」。<br>
         • 做完一項撳一下就 ✅，再撳取消。「補技巧」同「模擬考」係每星期一重新開始。<br>
         • 每次做完 Cambridge 真題，喺「📊 模擬考分數」記低 L/R/W/S，睇進度；Ben 亦會睇到。`)}
-      ${sec('🤖', 'AI 評分點設定？', `設定 → 「AI 評分」：貼上 Ben 俾你嘅 Gemini key，撳「儲存並測試」。見到 ✅ 就用得。<br>
-        • 免費版每日有限額。<b>設定 → AI 評分</b> 下面有「📊 今日 AI 用量」：每個型號用咗幾多次、剩幾多（第一次爆額之後先估到）、幾點重置（香港時間下午 3–4 點左右）。一個型號用完會自動轉另一個。<br>
+      ${sec('🤖', 'AI 評分點設定？', `設定 → 「AI 評分」：供應商揀「阿里雲 Qwen」，貼上 Ben 俾你嘅 key（sk- 開頭），撳「儲存並測試」。見到 ✅ 就用得。<br>
+        • Qwen 香港用得，亦聽得到你錄音（口語、句子讀音）。新帳號有 100 萬 token 免費（大約幾千次評分），之後都好平。<br>
+        • <b>設定 → AI 評分</b> 下面有「📊 AI 用量」：今日用咗幾多次、免費額度估計剩幾多、如果俾錢大約幾錢。<br>
         • 句子卡講啱咗會直接顯示「✅ 完全正確」，唔使用 AI；講法唔同先撳 🤖 問 AI（通常 2–5 秒）。超過 10 秒會自動停，再撳一次就得。<br>
         • AI 分數只供參考（同真考官可能差 0.5–1 分），最有用係睇「改正」同「點樣改進」。<br>
         • 唔好喺練習入面寫病人名或者私人資料。`)}
@@ -1673,10 +1741,13 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       PP.typed = v; runAI('para', { src: NE.paraphrase[PP.i].src, text: v }, 'aiParaBox', 'para' + PP.i);
     },
     aiSave: () => {
-      const k = ($('#aiKeyIn').value || '').trim(); if (!k && !AIC.key) return toast('請貼上 Gemini API key');
-      if (k) { AIC.key = k; AIC.models = null; } saveAIC();
-      const out = $('#aiStatus'); out.textContent = '測試緊…';
-      aiPickModels().then(ms => { out.textContent = '✅ 已連接：' + ms[0]; toast('🤖 AI 已連接'); }).catch(e => { out.textContent = '⚠️ ' + e.message; });
+      const prov = $('#aiProvIn').value; const k = ($('#aiKeyIn').value || '').trim();
+      if (prov !== aiProv() && !k) return toast('轉供應商要貼返新嘅 API key');
+      if (!k && !AIC.key) return toast('請貼上 API key');
+      if (k) { AIC.key = k.replace(/^Bearer\s+/i, ''); AIC.models = null; AIC.qModel = null; } AIC.provider = prov; saveAIC();
+      const out = $('#aiStatus'); out.textContent = '測試緊…（約 5 秒）';
+      const test = prov === 'qwen' ? qwenCall('Reply with JSON only: {"ok": true}', 'say').then(() => 'Qwen（' + AIC.qModel + '）') : aiPickModels().then(ms => ms[0]);
+      test.then(n => { out.textContent = '✅ 已連接：' + n; toast('🤖 AI 已連接'); }).catch(e => { out.textContent = '⚠️ ' + e.message; });
     },
     aiRemove: () => { if (!confirm('喺呢部機移除 AI key？')) return; AIC = {}; saveAIC(); render(); },
     aiSay: el => { const c = BY[el.dataset.id]; runAI('say', { ctx: c.def, zh: fill(c.zh), model: fill(c.en), text: SES.rec.v }, 'aiSayBox', c.id); },

@@ -1158,6 +1158,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
         <div class="row" style="align-items:flex-start;flex-wrap:nowrap"><div class="cue grow">${esc(qText)}
         ${P === 2 ? `<div class="small muted" style="margin-top:6px">You should say:</div><ul>${item.b.map(b => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}</div>${spk(P === 2 ? item.q + ' You should say: ' + item.b.join(', ') : qText)}</div>
         ${P === 2 ? `<details><summary>💡 中文提示 + 有用字</summary><p class="small">${esc(item.tip)}</p><div class="row">${item.v.map(v => `<span class="pill">${esc(v)}</span>`).join('')}</div></details>` : ''}
+        ${(() => { const m = P === 2 ? item.m : (NE.ielts.models || {})[item]; return m ? `<details><summary>⭐ Band 7 參考答案（自己講完先睇！）</summary><div class="ex small" style="white-space:pre-wrap">${esc(m)} ${spk(m)}</div><p class="small muted">唔好背誦：考官會扣「背誦答案」嘅分。學佢嘅結構同用字就得。</p></details>` : ''; })()}
       </div>
       <div class="card center">
         <div class="small muted" id="timerLabel">${TIMER ? esc(TIMER.label) : P === 2 ? '先準備 1 分鐘，再講 2 分鐘' : '撳開始，大聲答題'}</div>
@@ -1207,7 +1208,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     const w = NE.ielts.writing.find(x => x.id === id); if (!w) return '<p>搵唔到題目</p>';
     const st = NE.ielts.structures[w.type]; const d = S.drafts[id] || { text: '' };
     const target = w.task === 2 ? 250 : 150; const mins = w.task === 2 ? 40 : 20;
-    const sample = NE.ielts.sample.id === id ? NE.ielts.sample : null;
+    const sample = (NE.ielts.samples || {})[id] || (NE.ielts.sample.id === id ? NE.ielts.sample : null);
     const checks = w.task === 2
       ? ['有冇答晒題目所有部分？', '開首段有冇清楚講立場？', '每段有冇一個中心句？', '有冇例子支持論點？', '有冇用唔同嘅連接詞？', '結論有冇重申立場？', '字數夠 250？', '檢查時態、單複數、串字']
       : ['有冇寫 overview（主要趨勢）？', '有冇引用數字？', '有冇作比較？', '有冇避免個人意見？', '字數夠 150？', '檢查時態（過去年份用過去式）'];

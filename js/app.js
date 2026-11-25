@@ -245,11 +245,12 @@
   function buildQueue(opts) {
     if (opts.ids) return opts.ids.slice();
     const t = today();
-    const due = ALL.filter(c => (!opts.deck || c.d === opts.deck) && (!opts.track || trackOf(c) === opts.track) && S.cards[c.id] && S.cards[c.id].due <= t)
+    const inDecks = opts.decks ? new Set(opts.decks) : null;
+    const due = ALL.filter(c => (!opts.deck || c.d === opts.deck) && (!inDecks || inDecks.has(c.d)) && (!opts.track || trackOf(c) === opts.track) && S.cards[c.id] && S.cards[c.id].due <= t)
       .sort((a, b) => S.cards[a.id].due < S.cards[b.id].due ? -1 : 1).slice(0, S.settings.maxReview).map(c => c.id);
     const tr = opts.track || 'nurse';
     const nNew = opts.newCount != null ? opts.newCount : newLeftToday(tr);
-    const news = opts.deck ? pickNew([opts.deck], nNew) : newIdsFor(tr, nNew);
+    const news = opts.deck ? pickNew([opts.deck], nNew) : opts.decks ? pickNew(opts.decks, nNew) : newIdsFor(tr, nNew);
     const q = []; let a = 0, b = 0;
     while (a < due.length || b < news.length) {
       for (let k = 0; k < 3 && a < due.length; k++) q.push(due[a++]);
@@ -906,7 +907,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
       const ds = DECKS.filter(d => d.grp === g); if (!ds.length) return '';
       const n = ALL.filter(c => ds.some(d => d.id === c.d)).length; const also = subjAlso(g);
       const alsoRow = also.length ? `<div class="card tight deckrow" data-act="openSubjAlso" data-grp="${g}"><div class="ic">📎</div><div class="grow"><b>其他字庫相關字</b><div class="small muted">${also.length} 個（喺基本／進階字庫學）</div></div><span>›</span></div>` : '';
-      return `<details class="subj"><summary><b>${title}</b> <span class="small muted">${ds.length} 個字庫 · ${n + also.length} 張</span></summary>${ds.map(deckRow).join('')}${alsoRow}</details>`;
+      return `<details class="subj"><summary><b>${title}</b> <span class="small muted">${ds.length} 個字庫 · ${n + also.length} 張</span></summary>${`<div class="grid2" style="margin:4px 0 8px"><button class="btn-primary" data-act="studySubj" data-grp="${g}">📚 學呢科（溫習 + 10 個新字）</button><button class="btn-ghost" data-act="quiz" data-kind="subj" data-deck="${g}">✏️ 測驗呢科</button></div>`}${ds.map(deckRow).join('')}${alsoRow}</details>`;
     }).join('');
     const groups = (subj ? `<h2>📖 按科目</h2>${subj}` : '') + CATS.filter(([cat]) => TRACKS.nurse.cats.includes(cat)).map(([cat, title]) => {
       const ds = DECKS.filter(d => d.cat === cat && !d.grp);
@@ -999,6 +1000,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     if (kind === 'deck') pool = ALL.filter(c => c.d === deck);
     else if (kind === 'weak') pool = ALL.filter(c => S.stars[c.id] || (S.cards[c.id] && S.cards[c.id].l > 0));
     else if (kind === 'abbr') pool = ALL.filter(c => deckOf(c).abbr);
+    else if (kind === 'subj') pool = ALL.filter(c => deckOf(c).grp === deck).concat(subjAlso(deck));
     else if (kind === 'spell') pool = ALL.filter(c => S.cards[c.id] && spellable(c));
     else if (kind === 'listen') pool = ALL.filter(c => S.cards[c.id] && !deckOf(c).roots);
     else if (kind === 'all') pool = ALL.filter(c => enabledDecks().includes(c.d));
@@ -1127,7 +1129,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
         const ds = DECKS.filter(d => d.grp === g); if (!ds.length) return '';
         const n = ALL.filter(c => ds.some(d => d.id === c.d)).length; const also = subjAlso(g);
         const alsoRow = also.length ? `<div class="card tight deckrow" data-act="openSubjAlso" data-grp="${g}"><div class="ic">📎</div><div class="grow"><b>其他字庫相關字</b><div class="small muted">${also.length} 個</div></div><span>›</span></div>` : '';
-        return `<details class="subj"><summary><b>${title}</b> <span class="small muted">${n + also.length} 張</span></summary>${ds.map(deckRow).join('')}${alsoRow}</details>`;
+        return `<details class="subj"><summary><b>${title}</b> <span class="small muted">${n + also.length} 張</span></summary>${`<div class="grid2" style="margin:4px 0 8px"><button class="btn-primary" data-act="studySubj" data-grp="${g}">📚 學呢科（溫習 + 10 個新字）</button><button class="btn-ghost" data-act="quiz" data-kind="subj" data-deck="${g}">✏️ 測驗呢科</button></div>`}${ds.map(deckRow).join('')}${alsoRow}</details>`;
       }).join('')}
       <h2>📚 其他 IELTS 字庫</h2>${DECKS.filter(d => d.cat === 'ielts' && !d.grp).map(deckRow).join('')}
       <h2>🔗 連接詞速查</h2>${linkingHtml()}`;
@@ -2028,7 +2030,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 揭咗之後<b>誠實揀</b>：唔記得（今日會再出）／難／記得／好易（會隔耐啲先再出）。<br>
         • 🔊 聽讀音　🎤 跟讀（電腦會評；iPhone 就聽完跟住讀）　🔎 查字典　☆ 收藏　💌 對呢張卡有意見。<br>
         • 護理新字會自動先出進階字。想揀特定字庫：去「🩺 護理」頁：🔍 臨床評估、🧪 進階程序、⚗️ 藥理、🧬 進階疾病、🛡️ 感染控制、🧓 長者護理，同埋 🏨 病房日常句子、👩‍⚕️ 同同事溝通。入去字庫頁撳「學 10 個」就得。<br>
-        • 「📖 按科目」：每個科目（例如 👶 兒科）撳開有幾個字庫，連實用句。`)}
+        • 「📖 按科目」：每個科目（例如 👶 兒科）撳開有幾個字庫，連實用句。頂部有「📚 學呢科」（溫習 + 10 個新字）同「✏️ 測驗呢科」。IELTS 話題都一樣。`)}
       ${sec('✏️', '測驗', `
         護理測驗喺「🩺 護理」頁；IELTS 測驗喺「🎓 IELTS → 字彙」。有快測、弱項特訓、串字、聽力、縮寫挑戰。<b>答錯嘅字會自動加入今日溫習</b>，所以錯咗唔緊要，錯咗先記得牢。<br>答錯之後要<b>照住打 2 次正確答案</b>（句子 1 次）先去下一題，手打一次記得快好多；趕時間可以撳「略過」。`)}
       ${sec('🎓', 'IELTS 練習', `
@@ -2170,6 +2172,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     extraNew: el => startSession({ newCount: 5, deck: null, track: (el && el.dataset.track) || 'nurse' }),
     learnOne: el => { closeModal(); startSession({ ids: [el.dataset.id] }); },
     studyDeck: el => startSession({ deck: el.dataset.deck, newCount: 10 }),
+    studySubj: el => { const g = el.dataset.grp; const ds = DECKS.filter(d => d.grp === g).map(d => d.id); startSession({ decks: ds, newCount: 10, track: trackOfDeck(ds[0]) }); },
     hint: () => { SES.hint = true; render(); },
     showUpdates: () => { showUpdates(); render(); },
     sayRec: () => cardRecToggle(),

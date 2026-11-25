@@ -248,3 +248,13 @@ body.focus { padding-bottom: 20px; }
 }
 .rcrit { background: var(--surface2); border-radius: 12px; padding: 10px 12px; margin: 10px 0; break-inside: avoid; }
 .aiprog .progress > div { transition: width .3s ease; background: linear-gradient(90deg, var(--primary), #8b5cf6); }
+
+/* AI 助手 */
+.aifab { position: fixed; right: 14px; bottom: calc(84px + env(safe-area-inset-bottom)); width: 52px; height: 52px; border-radius: 50%; border: 0; font-size: 26px; z-index: 15;
+  background: linear-gradient(135deg, var(--primary), #8b5cf6); color: #fff; box-shadow: 0 6px 18px rgba(80, 60, 200, .35); cursor: pointer; }
+body.focus .aifab { display: none !important; }
+.chatlog { max-height: 55vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 2px; }
+.bub { padding: 9px 12px; border-radius: 16px; max-width: 88%; font-size: 15px; line-height: 1.45; }
+.bub.me { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; white-space: pre-wrap; }
+.bub.ai { align-self: flex-start; background: var(--surface2); border-bottom-left-radius: 4px; }
+.bub.ai p, .bub.ai ul { margin: 4px 0; }

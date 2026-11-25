@@ -44,7 +44,7 @@
     return {
       settings: Object.assign({}, DEFAULTS, d.settings), cards: d.cards || {}, log: d.log || {},
       custom: d.custom || [], stars: d.stars || {}, drafts: d.drafts || {}, counters: Object.assign({ speak: 0, essay: 0 }, d.counters),
-      events: d.events || [], feedback: d.feedback || [], roadmap: d.roadmap || {}, mocks: d.mocks || [], reports: d.reports || [], weekly: d.weekly || []
+      events: d.events || [], feedback: d.feedback || [], roadmap: d.roadmap || {}, mocks: d.mocks || [], reports: d.reports || [], weekly: d.weekly || [], chat: d.chat || []
     };
   }
   let S = load();
@@ -159,7 +159,7 @@
       app: 'nurse-english', exportedAt: new Date().toISOString(), contentVersion: NE.cards.length,
       summary: insights(30), settings: S.settings, counters: S.counters, feedback: S.feedback,
       log: S.log, cards: S.cards, stars: S.stars, custom: S.custom, drafts: S.drafts, events: S.events,
-      roadmap: S.roadmap, mocks: S.mocks, reports: S.reports, weekly: S.weekly
+      roadmap: S.roadmap, mocks: S.mocks, reports: S.reports, weekly: S.weekly, chat: S.chat
     };
   }
   function logToday() { const t = today(); return S.log[t] || (S.log[t] = { n: 0, r: 0, q: 0, qt: 0, ex: 0 }); }
@@ -567,6 +567,80 @@ Return JSON: {"band": overall band = average of the 4 criteria rounded to neares
           <button class="btn-primary btn-big btn-block" style="margin-top:8px${recording ? ';background:var(--bad)' : ''}" data-act="mockRec">${recording ? '⏹️ 答完' : '🔴 開始答'}</button>`}
         ${MOCK.err ? `<div class="fb no" style="margin-top:8px">${esc(MOCK.err)}</div>` : ''}</div>
       ${MOCK.qs.slice(0, MOCK.i).filter(x => x.a).length ? `<details class="subj"><summary class="small">之前答咗嘅（${MOCK.qs.slice(0, MOCK.i).length}）</summary>${MOCK.qs.slice(0, MOCK.i).map(x => `<p class="small"><b>${esc(x.q)}</b><br><span class="muted">${esc(x.a || '')}</span></p>`).join('')}</details>` : ''}`;
+  }
+
+  // ===== 💬 右下角 AI 助手：問計劃、問進度、改設定、記低改 app 嘅要求 =====
+  const CHAT_SET = { examDate: '考試日期 YYYY-MM-DD', target: '目標分數 e.g. 6.5', examType: 'ac 或 gt', newPerDay: '護理每日新字 (number)', newIelts: 'IELTS 每日新字 (number)', dailyGoal: '每日目標 (number)', advFirst: 'true/false 護理先學進階字', sentPrompt: 'true/false 學新字自動出造句', name: '名' };
+  function chatContext() {
+    const s = S.settings; const ins = insights(14);
+    const days = s.examDate ? Math.round((new Date(s.examDate) - new Date(today())) / 864e5) : null;
+    const rm = (NE.roadmap || []).map(ph => ({ phase: ph.title, done: ph.items.filter(it => Object.keys(S.roadmap).some(k => k === ph.id + ':' + it.id || k.startsWith(ph.id + ':' + it.id + '@'))).length, total: ph.items.length }));
+    return JSON.stringify({
+      today: today(), examDate: s.examDate || null, daysToExam: days, target: s.target, examType: s.examType,
+      settings: { newPerDay: s.newPerDay, newIelts: s.newIelts, dailyGoal: s.dailyGoal, advFirst: s.advFirst, sentPrompt: s.sentPrompt !== false },
+      streak: streak(), cardsLearned: Object.keys(S.cards).length, dueNursing: dueCount(null, 'nurse'), dueIelts: dueCount(null, 'ielts'),
+      last14days: { active: ins.activeDays, strong: ins.strengths, weak: ins.weaknesses, quizTypes: ins.quizTypes, mostMissed: ins.mostMissed.slice(0, 8).map(x => x.en), skills: ins.skills },
+      aiReports: S.reports.slice(-8).map(x => ({ date: fmt(new Date(x.t)), kind: x.kind, band: x.res.band, criteria: x.res.criteria })),
+      lastWeekly: S.weekly.length ? S.weekly[S.weekly.length - 1].res.summary : null, roadmap: rm, mocks: S.mocks.slice(-5),
+      nursingSubjects: (NE.subjects || []).map(x => x[1]), ieltsTopics: (NE.ieltsTopics || []).map(x => x[1])
+    });
+  }
+  const CHAT_SYS = () => `You are the friendly AI helper inside the "護士英文 Nurse English" phone app. The user is a 23-year-old Hong Kong enrolled nurse (paediatrics) preparing for IELTS (and a future nursing degree). Reply in Hong Kong Traditional Chinese (Cantonese style, 繁體字 only), short and practical; English for examples.
+APP FEATURES (routes): 今日 #home (今日任務, 備考路線圖 #plan); 🩺 護理 #library (15 nursing subjects grouped 按科目, quizzes: learned/weak/spell/listen/abbr/all); 🎓 IELTS #ielts (tabs: speak, write, read, listen, gram, para, vocab with 10 topic decks; 🎙️ AI 模擬口試 #mock; 📈 AI 報告 #reports); 📈 進度 #stats (學習報告 #coach); 設定 #settings; 使用說明 #help.
+DATA ABOUT HER (JSON): ${chatContext()}
+You can suggest actions; the app shows each as a button she must confirm. Allowed actions:
+- {"type":"setSetting","key":one of ${Object.keys(CHAT_SET).join('/')},"value":"...","label":"Chinese button text"}
+- {"type":"addWord","en":"...","zh":"...","def":"short English definition","ex":"example sentence","label":"..."}
+- {"type":"go","route":"#...","label":"..."}
+- {"type":"quiz","kind":"learned|weak|spell|listen|all","track":"nurse|ielts","label":"..."}
+- {"type":"request","text":"clear description of the app change she wants, for the developer","label":"..."}
+You cannot change app code yourself: for new features, content changes or bugs, use a "request" action (Ben's developer AI will do it later). Never invent data; use the JSON above. Use at most 3 actions.
+Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "actions": []}`;
+  let CHAT_BUSY = false;
+  function chatHtml() {
+    const M = S.chat.slice(-30); const sug = ['今日應該做咩？', '我邊樣最弱？點改善？', '幫我排到考試嘅溫習計劃', '我想改 app：…'];
+    return `<div class="row between" style="margin-bottom:8px"><b style="font-size:18px">🤖 AI 助手</b><div class="row">${S.chat.length ? '<button class="chip" data-act="chatClear">🗑️ 清除</button>' : ''}<button class="chip" data-act="closeModal">✕</button></div></div>
+      <div id="chatLog" class="chatlog">${M.length ? M.map((m, i) => m.role === 'user' ? `<div class="bub me">${esc(m.content)}</div>`
+        : `<div class="bub ai">${mdHtml(m.content || '')}${(m.actions || []).map((a, j) => `<button class="chip ${a.done ? '' : 'on'}" style="margin:4px 4px 0 0" ${a.done ? 'disabled' : `data-act="chatDo" data-i="${S.chat.length - M.length + i}" data-j="${j}"`}>${a.done ? '✔ ' : '✅ '}${esc(a.label || a.type)}</button>`).join('')}</div>`).join('')
+        : `<p class="small muted">問我任何嘢：溫習計劃、進度、弱項、app 點用；想改設定或者改 app 都可以同我講。</p><div class="row">${sug.map(x => `<button class="chip" data-act="chatSug" data-t="${esc(x)}">${esc(x)}</button>`).join('')}</div>`}
+        <div id="chatWait">${CHAT_BUSY ? progHtml('chatG', '🤖 諗緊…') : ''}</div></div>
+      <div class="row" style="flex-wrap:nowrap;margin-top:8px"><textarea id="chatIn" rows="2" placeholder="打你想問嘅嘢…" class="grow"></textarea><button class="btn-primary" data-act="chatSend" ${CHAT_BUSY ? 'disabled' : ''}>➤</button></div>
+      <p class="small muted" style="margin-top:4px">${AIC.dsKey ? '用 DeepSeek' : 'Qwen'} · 對話會儲存同同步</p>`;
+  }
+  function chatOpen() { if (!aiReady()) return toast('先喺設定 → AI 評分貼 key'); openModal(chatHtml()); const l = $('#chatLog'); if (l) l.scrollTop = l.scrollHeight; }
+  function chatRefresh() { if ($('#modal').classList.contains('hidden') || !$('#chatLog')) return; const keep = ($('#chatIn') || {}).value || ''; $('#sheet').innerHTML = chatHtml(); const l = $('#chatLog'); if (l) l.scrollTop = l.scrollHeight; const t = $('#chatIn'); if (t) t.value = keep; }
+  async function chatSend(text) {
+    text = (text || '').trim(); if (!text || CHAT_BUSY) return;
+    S.chat.push({ role: 'user', content: text.slice(0, 2000), t: Date.now() }); CHAT_BUSY = true; save(); chatRefresh(); const ti = $('#chatIn'); if (ti) ti.value = '';
+    progStart('chatG', 'chat');
+    try {
+      const hist = S.chat.slice(-12).map(m => ({ role: m.role, content: m.role === 'assistant' ? JSON.stringify({ reply: m.content, actions: m.actions || [] }) : m.content }));
+      const res = AIC.dsKey ? await deepseekCall([{ role: 'system', content: CHAT_SYS() }].concat(hist), 'chat')
+        : await aiCall(CHAT_SYS() + '\n\nCONVERSATION:\n' + hist.map(m => m.role + ': ' + m.content).join('\n'), 'chat');
+      const acts = (Array.isArray(res.actions) ? res.actions : []).filter(a => a && ['setSetting', 'addWord', 'go', 'quiz', 'request'].includes(a.type)).slice(0, 3);
+      S.chat.push({ role: 'assistant', content: String(res.reply || '（冇回覆）'), actions: acts, t: Date.now() });
+      logEv({ k: 'chat', q: text.slice(0, 300), a: String(res.reply || '').slice(0, 600) });
+    } catch (e) { S.chat.push({ role: 'assistant', content: '⚠️ ' + e.message, t: Date.now() }); }
+    if (S.chat.length > 80) S.chat.splice(0, S.chat.length - 80);
+    progStop(); CHAT_BUSY = false; save(); chatRefresh();
+  }
+  function chatDo(i, j) {
+    const m = S.chat[i]; const a = m && m.actions && m.actions[j]; if (!a || a.done) return;
+    if (a.type === 'setSetting') {
+      if (!CHAT_SET[a.key]) return toast('呢個設定唔改得');
+      let v = a.value; if (['newPerDay', 'newIelts', 'dailyGoal'].includes(a.key)) v = Math.max(0, Math.min(100, Number(v) || 0)); else if (['advFirst', 'sentPrompt'].includes(a.key)) v = String(v) === 'true';
+      else if (a.key === 'examDate' && !/^\d{4}-\d{2}-\d{2}$/.test(String(v))) return toast('日期格式唔啱');
+      S.settings[a.key] = v; toast('✅ 已更新設定');
+    } else if (a.type === 'addWord') {
+      if (!a.en) return; S.custom.push({ id: 'mine:' + Date.now(), en: String(a.en), zh: String(a.zh || ''), def: String(a.def || ''), ex: String(a.ex || ''), exZh: '', note: 'AI 助手加入' }); rebuild(); toast('⭐ 已加入我的生字');
+    } else if (a.type === 'request') {
+      S.feedback.push({ id: 'fb' + Date.now(), t: Date.now(), cat: 'ai-request', text: String(a.text || '').slice(0, 1000), ctx: 'assistant', route: location.hash.slice(1) }); toast('📝 已記低，Ben 會叫 Claude 改');
+    } else if (a.type === 'go') { if (!/^#[\w/-]*$/.test(a.route || '')) return; a.done = true; save(); closeModal(); location.hash = a.route; return; }
+    else if (a.type === 'quiz') { a.done = true; save(); closeModal(); startQuiz(a.kind || 'learned', null, a.track === 'ielts' ? 'ielts' : 'nurse'); return; }
+    a.done = true; save(); chatRefresh(); render();
+  }
+  function chatFab() {
+    if ($('#aiFab')) return; const b = document.createElement('button'); b.id = 'aiFab'; b.className = 'aifab no-print'; b.setAttribute('aria-label', 'AI 助手'); b.dataset.act = 'chatOpen'; b.textContent = '🤖'; document.body.appendChild(b);
   }
 
   // ===== 學習 session =====
@@ -1176,6 +1250,8 @@ Return JSON: {"band": overall band = average of the 4 criteria rounded to neares
         <label>AI 供應商</label><select id="aiProvIn"><option value="qwen" ${aiProv() === 'qwen' ? 'selected' : ''}>阿里雲 Qwen（建議：香港用得、聽到錄音、好平）</option><option value="gemini" ${aiProv() === 'gemini' ? 'selected' : ''}>Google Gemini（香港用唔到）</option></select>
         <p class="small" id="aiStatus" style="font-weight:700">${aiReady() ? '✅ 已設定：' + (aiProv() === 'qwen' ? 'Qwen' + (AIC.qModel ? '（' + esc(AIC.qModel) + '）' : '') : 'Gemini' + (AIC.models ? '（' + esc(AIC.models[0]) + '）' : '')) : '未設定'}</p>
         <label>API key</label><input id="aiKeyIn" type="password" autocomplete="off" autocapitalize="none" placeholder="${aiReady() ? '已設定（想換先填）' : 'sk-…（由 Ben 提供）'}">
+        <label style="margin-top:10px">DeepSeek key（選填：AI 助手同後備）</label><input id="dsKeyIn" type="password" autocomplete="off" autocapitalize="none" placeholder="${AIC.dsKey ? '已設定（想換先填）' : 'sk-…（選填）'}">
+        ${AIC.dsKey ? `<p class="small muted">DeepSeek：用咗 ${(AIC.dsTot || {}).n || 0} 次 · 大約 ${(((AIC.dsTot || {}).in || 0) + ((AIC.dsTot || {}).out || 0)).toLocaleString()} token</p>` : ''}
         <div class="grid2" style="margin-top:10px"><button class="btn-primary" data-act="aiSave">儲存並測試</button>${aiReady() ? '<button class="btn-ghost" data-act="aiRemove">移除</button>' : '<span></span>'}</div>${aiUsageHtml()}</div>
       <h2>☁️ 同步俾 Ben 睇（可選）</h2>
       <div class="card"><p class="small">連接之後，學習記錄同意見箱會自動上載去 Ben 嘅<b>私人</b> GitHub repo，佢可以叫 Claude 分析你嘅強弱項、調整練習。Token 只存喺呢部手機。</p>
@@ -1375,8 +1451,8 @@ Return JSON: {"band": overall band = average of the 4 criteria rounded to neares
   const AI_KEY = 'ne_ai';
   let AIC = {}; try { AIC = JSON.parse(localStorage.getItem(AI_KEY) || '{}') || {}; } catch (e) { AIC = {}; }
   const saveAIC = () => { try { localStorage.setItem(AI_KEY, JSON.stringify(AIC)); } catch (e) { /* 冇得存 */ } };
-  const aiReady = () => !!AIC.key;
-  const AI_KIND = { weekly: '每週學習報告', explain: '錯題解釋', sentence: '造句', essay: '寫作', speak: '口語', speakAudio: '口語（錄音）', sayAudio: '句子（錄音）', para: '改寫', say: '句子講法' };
+  const aiReady = () => !!(AIC.key || AIC.dsKey);
+  const AI_KIND = { chat: 'AI 助手', weekly: '每週學習報告', explain: '錯題解釋', sentence: '造句', essay: '寫作', speak: '口語', speakAudio: '口語（錄音）', sayAudio: '句子（錄音）', para: '改寫', say: '句子講法' };
   const AI_PREF = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
   async function aiPickModels() {
     const r = await fetchT('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': AIC.key } }, 8000);
@@ -1396,7 +1472,7 @@ Return JSON: {"band": overall band = average of the 4 criteria rounded to neares
     finally { clearTimeout(t); }
   }
   // 短題（句子、改寫）要快：用 Lite 型號、唔開「思考」、限制長度
-  const AI_LIMIT = { weekly: { ms: 60000, tok: 1800 }, explain: { ms: 15000, tok: 600, fast: true }, sentence: { ms: 15000, tok: 600, fast: true }, speakAudio: { ms: 80000, tok: 3800 }, sayAudio: { ms: 25000, tok: 900, fast: true }, say: { ms: 10000, tok: 500, fast: true }, para: { ms: 10000, tok: 600, fast: true }, speak: { ms: 45000, tok: 2800 }, essay: { ms: 90000, tok: 4800 } };
+  const AI_LIMIT = { chat: { ms: 60000, tok: 1500 }, weekly: { ms: 60000, tok: 1800 }, explain: { ms: 15000, tok: 600, fast: true }, sentence: { ms: 15000, tok: 600, fast: true }, speakAudio: { ms: 80000, tok: 3800 }, sayAudio: { ms: 25000, tok: 900, fast: true }, say: { ms: 10000, tok: 500, fast: true }, para: { ms: 10000, tok: 600, fast: true }, speak: { ms: 45000, tok: 2800 }, essay: { ms: 90000, tok: 4800 } };
   function thinkCfg(m, fast) {
     if (/^gemini-2\.5-flash/.test(m)) return { thinkingBudget: 0 };
     if (/^gemini-3/.test(m)) return { thinkingLevel: fast ? 'minimal' : 'low' };
@@ -1475,7 +1551,38 @@ Return JSON: {"band": overall band = average of the 4 criteria rounded to neares
   async function aiCall(prompt, kind, media) {
     if (!aiReady()) throw new Error('未設定 AI（設定 → AI 評分）');
     if (!navigator.onLine) throw new Error('要有網先用到 AI');
-    return aiProv() === 'qwen' ? qwenCall(prompt, kind, media) : geminiCall(prompt, kind, media);
+    if (!AIC.key) { if (media) throw new Error('錄音功能要 Qwen key（設定 → AI 評分）'); return deepseekCall([{ role: 'user', content: prompt }], kind); }
+    if (aiProv() !== 'qwen') return geminiCall(prompt, kind, media);
+    try { return await qwenCall(prompt, kind, media); }
+    catch (e) { if (!media && AIC.dsKey && e.name !== 'AbortError') { try { return await deepseekCall([{ role: 'user', content: prompt }], kind); } catch (e2) { throw e; } } throw e; }
+  }
+  // DeepSeek（只係文字；Qwen 用唔到時做後備，亦用嚟做 AI 助手）
+  async function deepseekCall(messages, kind) {
+    const L = AI_LIMIT[kind] || AI_LIMIT.speak; const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), L.ms);
+    try {
+      const r = await fetch('https://api.deepseek.com/chat/completions', { method: 'POST', signal: ac.signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + AIC.dsKey },
+        body: JSON.stringify({ model: 'deepseek-chat', messages, stream: true, stream_options: { include_usage: true }, max_tokens: L.tok, temperature: 0.3, response_format: { type: 'json_object' } }) });
+      if (!r.ok) {
+        const t = await r.text().catch(() => '');
+        if (r.status === 401) throw new Error('DeepSeek key 無效');
+        if (r.status === 402) throw new Error('DeepSeek 戶口冇錢，要去 platform.deepseek.com 增值');
+        if (r.status === 429) throw new Error('DeepSeek 太多人用，等陣再試');
+        throw new Error('DeepSeek 回應 ' + r.status + ' ' + t.slice(0, 80));
+      }
+      const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '', txt = '', usage = null;
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true }); const lines = buf.split('\n'); buf = lines.pop();
+        for (const ln of lines) {
+          if (!ln.startsWith('data:')) continue; const d = ln.slice(5).trim(); if (!d || d === '[DONE]') continue;
+          try { const j = JSON.parse(d); const c = j.choices && j.choices[0]; if (c && c.delta && c.delta.content) { txt += c.delta.content; if (AIPROG) AIPROG.got = txt.length; } if (j.usage) usage = j.usage; } catch (e) { /* 唔完整 */ }
+        }
+      }
+      const u = qUse(); u.n++; if (!AIC.dsTot) AIC.dsTot = { in: 0, out: 0, n: 0, since: today() };
+      AIC.dsTot.n++; if (usage) { AIC.dsTot.in += usage.prompt_tokens || 0; AIC.dsTot.out += usage.completion_tokens || 0; } saveAIC();
+      const out = JSON.parse((txt.match(/\{[\s\S]*\}/) || ['{}'])[0]); out._model = 'deepseek-chat'; return out;
+    } catch (e) { if (e.name === 'AbortError') throw new Error('DeepSeek 太慢（超時），再試一次'); throw e; }
+    finally { clearTimeout(timer); }
   }
   // ===== AI 進度條：按時間 + 已收到嘅內容估算 0–100% =====
   let AIPROG = null;
@@ -1902,6 +2009,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 分 6 個階段：準備 → 摸底 → 補技巧 → 模擬考 → 衝刺 → 考試當日。App 會按考試日期標示「而家做呢個」。<br>
         • 做完一項撳一下就 ✅，再撳取消。「補技巧」同「模擬考」係每星期一重新開始。<br>
         • 每次做完 Cambridge 真題，喺「📊 模擬考分數」記低 L/R/W/S，睇進度；Ben 亦會睇到。`)}
+      ${sec('🤖', '右下角 AI 助手點用？', `每頁右下角嘅 🤖 圓掣：問溫習計劃、進度、弱項、app 點用都得。<br>• 佢可以幫你改設定（例如考試日期、每日新字）、加生字、開測驗：會出按鈕，你撳先會做。<br>• 想 app 加功能、改內容或者有 bug：同佢講，撳「提交」就會記低，Ben 會叫 Claude 改。<br>• 有 DeepSeek key 就用 DeepSeek（傾偈好啲），冇就用 Qwen。`)}
       ${sec('🎙️', 'AI 模擬口試點用？', `「🎓 IELTS」頂部撳「AI 模擬口試」。AI 考官會讀出問題（🔊 可以再聽），你撳「🔴 開始答」講，講完撳「⏹️ 答完」。<br>• Part 1：4 條日常問題；Part 2：題目卡，可以先準備 1 分鐘，講 1–2 分鐘；Part 3：考官根據你講嘅內容追問 4 條。<br>• 完成後出完整報告（4 項評分），自動儲存喺「📈 我嘅 AI 報告」。全程大約 12–15 分鐘，用大約 10 次 AI。`)}
       ${sec('🤔', '測驗錯咗點算？', `答錯之後撳「🤔 點解錯？問 AI」：AI 會解釋點解錯、兩個字有咩分別、記憶貼士同例句。`)}
       ${sec('✍️', '造句練習係咩？', `學新字時，翻轉張卡會出「用呢個字造一句」。寫完撳「🤖 AI 幫我改」，AI 會話你用得啱唔啱同改好。唔想做就撳「略過」；設定入面可以關咗自動出。`)}
@@ -1992,6 +2100,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
   }
   let lastRoute = '';
   function after(route) {
+    chatFab(); const fab = $('#aiFab'); if (fab) fab.style.display = aiReady() && !['study', 'quizrun', 'mock', 'write'].includes(route) ? '' : 'none';
     if (route === 'coach') loadClaudeList();
     if (route === 'creport') { const a = (location.hash.split('/')[1] || ''); loadClaudeReport(decodeURIComponent(a)); }
     if (route === 'home' && !updPopped && S.settings.seenHelp && hasNewUpdate()) { updPopped = true; setTimeout(() => { if (location.hash === '' || location.hash === '#home') { showUpdates(); render(); } }, 700); }
@@ -2061,15 +2170,17 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       PP.typed = v; runAI('para', { src: NE.paraphrase[PP.i].src, text: v }, 'aiParaBox', 'para' + PP.i);
     },
     aiSave: () => {
-      const prov = $('#aiProvIn').value; const k = ($('#aiKeyIn').value || '').trim();
+      const prov = $('#aiProvIn').value; const k = ($('#aiKeyIn').value || '').trim(); const dk = ($('#dsKeyIn').value || '').trim().replace(/^Bearer\s+/i, '');
+      if (dk) { AIC.dsKey = dk; saveAIC(); }
+      if (!k && !AIC.key) { if (!AIC.dsKey) return toast('請貼上 API key'); const out = $('#aiStatus'); out.textContent = '測試 DeepSeek 緊…'; deepseekCall([{ role: 'user', content: 'Reply with JSON only: {"ok": true}' }], 'say').then(() => { out.textContent = '✅ DeepSeek 已連接（錄音功能要 Qwen key）'; toast('🤖 DeepSeek 已連接'); }).catch(e => { out.textContent = '⚠️ ' + e.message; }); return; }
       if (prov !== aiProv() && !k) return toast('轉供應商要貼返新嘅 API key');
-      if (!k && !AIC.key) return toast('請貼上 API key');
       if (k) { AIC.key = k.replace(/^Bearer\s+/i, ''); AIC.models = null; AIC.qModel = null; } AIC.qBad = null; AIC.provider = prov; saveAIC();
       const out = $('#aiStatus'); out.textContent = '測試緊…（約 5 秒）';
       const test = prov === 'qwen' ? qwenCall('Reply with JSON only: {"ok": true}', 'say').then(() => 'Qwen（' + AIC.qModel + '）') : aiPickModels().then(ms => ms[0]);
-      test.then(n => { out.textContent = '✅ 已連接：' + n; toast('🤖 AI 已連接'); }).catch(e => { out.textContent = '⚠️ ' + e.message; });
+      test.then(n => { out.textContent = '✅ 已連接：' + n; toast('🤖 AI 已連接'); }).catch(e => { out.textContent = '⚠️ ' + e.message; })
+        .then(() => dk ? deepseekCall([{ role: 'user', content: 'Reply with JSON only: {"ok": true}' }], 'say').then(() => { out.textContent += ' · DeepSeek ✅'; }).catch(e => { out.textContent += ' · DeepSeek ⚠️ ' + e.message; }) : 0);
     },
-    aiRemove: () => { if (!confirm('喺呢部機移除 AI key？')) return; AIC = {}; saveAIC(); render(); },
+    aiRemove: () => { if (!confirm('喺呢部機移除所有 AI key（Qwen 同 DeepSeek）？')) return; AIC = {}; saveAIC(); render(); },
     aiSay: el => { const c = BY[el.dataset.id]; runAI('say', { ctx: c.def, zh: fill(c.zh), model: fill(c.en), text: SES.rec.v }, 'aiSayBox', c.id); },
     showZh: () => { SES.showZh = true; render(); },
     grade: el => grade(Number(el.dataset.g)),
@@ -2081,6 +2192,11 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     openSubjAlso: el => { const g = el.dataset.grp; const t = ((NE.subjects || []).concat(NE.ieltsTopics || []).find(s => s[0] === g) || [, ''])[1];
       openModal(`<h2 style="margin-top:0">📎 ${esc(t)}：其他字庫相關字</h2><p class="small muted">呢啲字喺基本／進階字庫入面，溫習會跟返原本字庫。</p>${cardList(subjAlso(g))}<button class="btn-ghost btn-block" style="margin-top:12px" data-act="closeModal">關閉</button>`); },
     weeklyGo: () => runAI('weekly', { data: weeklyData(), exam: S.settings.examDate, target: S.settings.target, text: '' }, 'aiWeekBox', 'week'),
+    chatOpen: () => chatOpen(),
+    chatSend: () => chatSend(($('#chatIn') || {}).value),
+    chatSug: el => { const t = el.dataset.t; if (t.endsWith('…')) { const i = $('#chatIn'); i.value = t.replace('…', ''); i.focus(); } else chatSend(t); },
+    chatDo: el => chatDo(+el.dataset.i, +el.dataset.j),
+    chatClear: () => { if (!confirm('清除所有對話？')) return; S.chat = []; save(); chatRefresh(); },
     mockStart: () => mockStart(),
     mockSay: () => mockSay(),
     mockRec: () => mockRec(),
@@ -2322,6 +2438,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
   document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.id === 'spellIn') { e.preventDefault(); A.spellGo(); }
     if (e.key === 'Enter' && e.target.id === 'copyIn') { e.preventDefault(); A.copyGo(); }
+    if (e.key === 'Enter' && !e.shiftKey && e.target.id === 'chatIn' && !e.isComposing) { e.preventDefault(); A.chatSend(); }
     if (location.hash === '#study' && SES && !e.target.closest('input,textarea')) {
       if (e.key === ' ' && !SES.revealed) { e.preventDefault(); A.reveal(); }
       else if (SES.revealed && '1234'.includes(e.key)) grade(Number(e.key) - 1);

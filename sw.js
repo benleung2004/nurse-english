@@ -1,5 +1,5 @@
 // 離線快取：網絡優先（有網就攞新版，冇網用快取）
-const CACHE_VERSION = 'ne-v22';
+const CACHE_VERSION = 'ne-v23';
 const FILES = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/data/core.js', 'js/data/medical.js',
   'js/data/terms.js', 'js/data/phrases.js', 'js/data/ielts.js', 'js/data/practice.js', 'js/data/clinical.js', 'js/data/nurse-paed.js', 'js/data/nurse-ms1.js', 'js/data/nurse-deep1.js', 'js/data/nurse-ms2.js', 'js/data/nurse-ms3.js', 'js/data/subj-map.js', 'js/data/ielts-adv.js', 'js/data/ielts-topics1.js', 'js/data/ielts-topics2.js', 'js/data/roadmap.js', 'js/data/rubric.js', 'js/data/updates.js', 'js/data/coach.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];

@@ -1,7 +1,7 @@
 // 離線快取：網絡優先（有網就攞新版，冇網用快取）
-const CACHE_VERSION = 'ne-v10';
+const CACHE_VERSION = 'ne-v11';
 const FILES = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/data/core.js', 'js/data/medical.js',
-  'js/data/terms.js', 'js/data/phrases.js', 'js/data/ielts.js', 'js/data/practice.js', 'js/data/clinical.js', 'js/data/ielts-adv.js', 'js/data/roadmap.js', 'js/data/coach.js', 'manifest.webmanifest',
+  'js/data/terms.js', 'js/data/phrases.js', 'js/data/ielts.js', 'js/data/practice.js', 'js/data/clinical.js', 'js/data/ielts-adv.js', 'js/data/roadmap.js', 'js/data/updates.js', 'js/data/coach.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE_VERSION).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

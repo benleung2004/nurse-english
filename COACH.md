@@ -54,6 +54,7 @@ mkdir -p logs && gh api repos/benleung2004/nurse-english-data/contents/data/prog
 
 ## 5. 改完
 0. **加咗或者改咗功能，一定要同時更新使用說明**：`js/app.js` 嘅 `V.help`（佢喺 app 首頁 ❓ 睇到）
+0b. **每次上載改動都要喺 `js/data/updates.js` 最頂加一條**（id = 日期、title、items 用佢睇得明嘅講法），佢會見到 🔔 紅點同自動彈出
 1. `sw.js` 嘅 `CACHE_VERSION` +1
 2. `node --check js/app.js`，再用內置瀏覽器 preview（launch.json 嘅 `nurse-english`，port 8796）手機尺寸檢查
 3. Ben 批准先 commit / push（GitHub Pages 約 1 分鐘更新）

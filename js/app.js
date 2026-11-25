@@ -37,7 +37,7 @@
 
   // ===== 資料儲存（只存喺手機 localStorage） =====
   const KEY = 'nurse-english-v1';
-  const DEFAULTS = { name: '', dailyGoal: 20, newPerDay: 10, maxReview: 100, zhMode: 'tap', accent: 'en-GB', rate: 0.9, theme: 'auto', decks: null, remind: '21:00', hideInstall: false, examDate: '', examType: 'ac', target: '6.5', seenHelp: false };
+  const DEFAULTS = { name: '', dailyGoal: 20, newPerDay: 10, maxReview: 100, zhMode: 'tap', accent: 'en-GB', rate: 0.9, theme: 'auto', decks: null, remind: '21:00', hideInstall: false, examDate: '', examType: 'ac', target: '6.5', seenHelp: false, newIelts: 10, advFirst: true, seenUpdate: '' };
   function load() {
     let d = {};
     try { d = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { d = {}; }
@@ -171,6 +171,13 @@
   const deckOf = c => DECKMAP[c.d] || {};
   const color = id => DECK_COLORS[id] || '#12a39a';
   const fill = s => String(s || '').replace(/\{name\}/g, S.settings.name || 'Amy');
+  // 兩條線分開：🩺 護理英文（醫護字、病房句子、自己加嘅字）同 🎓 IELTS
+  const TRACKS = { nurse: { name: '護理英文', icon: '🩺', cats: ['medical', 'talk', 'mine'] }, ielts: { name: 'IELTS', icon: '🎓', cats: ['ielts'] } };
+  const trackOfDeck = id => (DECKMAP[id] && DECKMAP[id].cat === 'ielts') ? 'ielts' : 'nurse';
+  const trackOf = c => trackOfDeck(c.d);
+  // 佢話基本醫護字已經識：護理新字先出進階字庫同句子，出完先輪到基本字
+  const BASIC_NURSE = ['vital', 'body', 'symptoms', 'conditions', 'care', 'meds', 'equip', 'abbr', 'roots'];
+  const trackDecks = t => enabledDecks().filter(id => trackOfDeck(id) === t);
   const enabledDecks = () => (S.settings.decks || DECKS.map(d => d.id)).filter(id => DECKMAP[id]);
   function speakText(c) {
     const dk = deckOf(c);
@@ -203,11 +210,23 @@
   }
   function ivLabel(i) { return i === 0 ? '再嚟' : i < 30 ? i + '日' : Math.round(i / 30) + '個月'; }
 
-  function dueCount(deck) {
+  function dueCount(deck, track) {
     const t = today();
-    return ALL.filter(c => (!deck || c.d === deck) && S.cards[c.id] && S.cards[c.id].due <= t).length;
+    return ALL.filter(c => (!deck || c.d === deck) && (!track || trackOf(c) === track) && S.cards[c.id] && S.cards[c.id].due <= t).length;
   }
-  function newLeftToday() { return Math.max(0, S.settings.newPerDay - (logToday().n || 0)); }
+  function newLeftToday(track) {
+    const L = logToday(); const ni = L.ni || 0;
+    if (track === 'ielts') return Math.max(0, (S.settings.newIelts || 0) - ni);
+    return Math.max(0, S.settings.newPerDay - ((L.n || 0) - ni));
+  }
+  function newIdsFor(track, n) {
+    const ds = trackDecks(track);
+    if (track === 'nurse' && S.settings.advFirst) {
+      const first = pickNew(ds.filter(id => !BASIC_NURSE.includes(id)), n);
+      return first.concat(pickNew(ds.filter(id => BASIC_NURSE.includes(id)), n - first.length));
+    }
+    return pickNew(ds, n);
+  }
   function pickNew(deckIds, n) {
     if (n <= 0) return [];
     const lists = deckIds.map(id => ALL.filter(c => c.d === id && !S.cards[c.id]));
@@ -220,10 +239,11 @@
   function buildQueue(opts) {
     if (opts.ids) return opts.ids.slice();
     const t = today();
-    const due = ALL.filter(c => (!opts.deck || c.d === opts.deck) && S.cards[c.id] && S.cards[c.id].due <= t)
+    const due = ALL.filter(c => (!opts.deck || c.d === opts.deck) && (!opts.track || trackOf(c) === opts.track) && S.cards[c.id] && S.cards[c.id].due <= t)
       .sort((a, b) => S.cards[a.id].due < S.cards[b.id].due ? -1 : 1).slice(0, S.settings.maxReview).map(c => c.id);
-    const nNew = opts.newCount != null ? opts.newCount : newLeftToday();
-    const news = pickNew(opts.deck ? [opts.deck] : enabledDecks(), nNew);
+    const tr = opts.track || 'nurse';
+    const nNew = opts.newCount != null ? opts.newCount : newLeftToday(tr);
+    const news = opts.deck ? pickNew([opts.deck], nNew) : newIdsFor(tr, nNew);
     const q = []; let a = 0, b = 0;
     while (a < due.length || b < news.length) {
       for (let k = 0; k < 3 && a < due.length; k++) q.push(due[a++]);
@@ -451,7 +471,7 @@
   function startSession(opts) {
     const q = buildQueue(opts || {});
     if (!q.length) { toast(opts && opts.deck ? '呢個字庫暫時冇卡要學 🎉' : '暫時冇卡要溫 🎉'); return; }
-    SES = { queue: q, i: 0, revealed: false, showZh: false, hint: false, seen: new Set(), good: 0, again: 0, anim: 'enter' };
+    SES = { queue: q, i: 0, revealed: false, showZh: false, hint: false, seen: new Set(), good: 0, again: 0, anim: 'enter', track: (opts && opts.track) || (opts && opts.deck ? trackOfDeck(opts.deck) : 'nurse') };
     location.hash = '#study';
   }
   function grade(g) {
@@ -460,7 +480,7 @@
     S.cards[id] = nextState(prev, g);
     logEv({ k: 'study', id, g, nw: prev ? 0 : 1, ms: Date.now() - (SES.shownAt || Date.now()) });
     const L = logToday();
-    if (!SES.seen.has(id)) { SES.seen.add(id); if (!prev) L.n++; else L.r++; }
+    if (!SES.seen.has(id)) { SES.seen.add(id); if (!prev) { L.n++; if (trackOf(BY[id]) === 'ielts') L.ni = (L.ni || 0) + 1; } else L.r++; }
     if (g === 0) { SES.again++; SES.queue.splice(Math.min(SES.i + 4, SES.queue.length), 0, id); } else SES.good++;
     SES.i++; SES.revealed = false; SES.showZh = false; SES.hint = false; SES.rec = null; SES.typed = ''; SES.ch = null; SES.anim = 'enter';
     save(); checkGoal(); render();
@@ -469,9 +489,35 @@
   // ===== 畫面 =====
   const V = {};
 
+  // ===== 🔔 更新通知 =====
+  const hasNewUpdate = () => !!(NE.updates && NE.updates.length && NE.updates[0].id !== S.settings.seenUpdate);
+  function showUpdates() {
+    const U = NE.updates || [];
+    openModal(`<div class="row between"><h2 style="margin:0">🔔 App 更新</h2><button class="icon-btn" data-act="closeModal">✕</button></div>
+      ${U.map((u, i) => `<div class="card tight" style="margin-top:10px;${i === 0 ? 'border-left:5px solid var(--accent)' : ''}"><div class="row between"><b>${esc(u.title)}</b><span class="small muted">${esc(u.id)}</span></div>
+        ${u.items.map(x => `<p class="small" style="margin:6px 0">• ${esc(x)}</p>`).join('')}</div>`).join('')}
+      <p class="small muted">有咩想改，用首頁「💌 意見箱」話俾 Ben 知。</p>
+      <button class="btn-primary btn-block" data-act="closeModal">知道喇 👍</button>`);
+    if (U.length) { S.settings.seenUpdate = U[0].id; save(); }
+  }
+  let updPopped = false;
+  function trackCard(t, c) {
+    const T = TRACKS[t]; const left = c.d + c.n;
+    const head = `<div class="row between"><h2 style="margin:0">${T.icon} ${T.name}</h2><span class="small muted">溫習 ${c.d} · 新字 ${c.n}</span></div>`;
+    const start = left > 0
+      ? `<button class="btn-primary btn-block ${t === 'nurse' ? 'pulse' : ''}" style="margin-top:10px" data-act="startToday" data-track="${t}">開始${T.name}字卡（${left} 張）→</button>`
+      : `<div class="row" style="margin-top:10px"><div class="grow small"><b>今日${T.name}字卡完成 ✨</b></div><button class="btn-ghost" data-act="extraNew" data-track="${t}">+5 新字</button></div>`;
+    if (t === 'nurse') return `<div class="card" style="border-left:5px solid #12a39a">${head}
+      <p class="small muted" style="margin:4px 0 0">工作用：醫護字、病房句子、同同事溝通${S.settings.advFirst ? ' · 先學進階字' : ''}</p>${start}
+      <div class="row" style="margin-top:8px"><button class="chip" data-act="quiz" data-kind="learned" data-track="nurse">✏️ 測驗</button><button class="chip" data-act="quiz" data-kind="weak" data-track="nurse">🎯 弱項</button><button class="chip" data-act="quiz" data-kind="spell" data-track="nurse">⌨️ 串字</button><a class="chip btn" href="#library">📚 字庫</a></div></div>`;
+    return `<div class="card" style="border-left:5px solid #3b82f6">${head}
+      <p class="small muted" style="margin:4px 0 0">考試用：IELTS 字彙、口語、寫作、閱讀、聽力</p>${start}
+      ${examCard(true)}</div>`;
+  }
   V.home = () => {
     const L = logToday(), act = activity(L), goal = S.settings.dailyGoal;
-    const due = dueCount(), nl = Math.min(newLeftToday(), pickNew(enabledDecks(), newLeftToday()).length);
+    const tc = t => { const d = dueCount(null, t), n = newIdsFor(t, newLeftToday(t)).length; return { d, n }; };
+    const TN = tc('nurse'), TI = tc('ielts');
     const h = new Date().getHours();
     const greet = h < 12 ? '早晨' : h < 18 ? '午安' : '晚安';
     const wd = ['日', '一', '二', '三', '四', '五', '六'][new Date().getDay()];
@@ -487,7 +533,7 @@
       <div><div class="muted small">${new Date().getMonth() + 1}月${new Date().getDate()}日 星期${wd}</div>
       <h1>${greet}${S.settings.name ? '，' + esc(S.settings.name) : ''} 👋</h1>
       <a href="#settings" class="pill" style="text-decoration:none;${syncReady() && !SY.lastError ? '' : 'background:rgba(239,90,90,.14);color:var(--bad)'}">${esc(syncReady() ? syncStatusText() : '☁️ 未連接同步：撳呢度設定')}</a></div>
-      <div class="row" style="flex-wrap:nowrap;gap:8px"><a class="btn icon-btn" href="#help" aria-label="使用說明">❓</a><a class="btn icon-btn" href="#settings" aria-label="設定">⚙️</a></div>
+      <div class="row" style="flex-wrap:nowrap;gap:8px"><button class="icon-btn" data-act="showUpdates" aria-label="更新通知" style="position:relative">🔔${hasNewUpdate() ? '<span style="position:absolute;top:4px;right:4px;width:10px;height:10px;border-radius:50%;background:var(--bad);box-shadow:0 0 0 2px var(--surface)"></span>' : ''}</button><a class="btn icon-btn" href="#help" aria-label="使用說明">❓</a><a class="btn icon-btn" href="#settings" aria-label="設定">⚙️</a></div>
     </div>
     ${!S.settings.seenHelp ? `<div class="card tight" style="border-left:5px solid var(--accent)"><b>👋 第一次用？</b><p class="small">睇 1 分鐘使用說明，知道每日做咩、點樣用。</p>
       <div class="row"><a class="btn btn-accent" href="#help">📖 睇使用說明</a><button class="btn-ghost" data-act="hideWelcome">唔使喇</button></div></div>` : ''}
@@ -497,15 +543,12 @@
         <div class="grow">
           <div class="streak"><span class="flame">🔥</span> ${st} 日連續</div>
           <div class="muted small">今日進度 ${act} / ${goal}　${L.goalHit ? '✅ 已達標' : ''}</div>
-          <div class="muted small">待溫習 ${due} · 新字 ${nl}</div>
+          <div class="muted small">🩺 護理 ${TN.d + TN.n} 張 · 🎓 IELTS ${TI.d + TI.n} 張</div>
         </div>
       </div>
-      <div style="margin-top:14px">
-      ${due + nl > 0
-        ? `<button class="btn-white btn-big btn-block pulse" data-act="startToday">開始今日學習 →</button>`
-        : `<div class="row"><div class="grow"><b>今日嘅卡已完成 ✨</b></div><button class="btn-white" data-act="extraNew">+5 新字</button></div>`}
-      </div>
     </div>
+    ${trackCard('nurse', TN)}
+    ${trackCard('ielts', TI)}
     ${w ? `<div class="card wotd">
       <div class="row between"><span class="pill" style="background:var(--grad-warm);color:#fff">📅 今日一字</span><span class="small muted">${esc(deckOf(w).icon)} ${esc(deckOf(w).zh)}</span></div>
       <div class="row" style="margin-top:8px"><div class="grow"><div style="font-size:24px;font-weight:800">${esc(w.en)}</div><div style="color:${color(w.d)};font-weight:700">${esc(w.zh)}</div></div>${spk(speakText(w))}</div>
@@ -520,7 +563,6 @@
       <button class="action" data-act="addWord"><span class="ico c-orange">＋</span>加生字</button>
     </div>
     <div style="height:12px"></div>
-    ${examCard()}
     ${coachCard()}
     <a class="card tight deckrow" href="#feedback" style="color:inherit;text-decoration:none;--dc-soft:rgba(255,107,154,.16)"><div class="ic">💌</div>
       <div class="grow"><b>意見箱</b><div class="small muted">有咩想改、唔明、錯字，寫低俾 Ben${Object.keys((NE.coach || {}).replies || {}).some(id => S.feedback.some(f => f.id === id)) ? ' · 有回覆 💬' : ''}</div></div><span>›</span></a>
@@ -618,8 +660,8 @@
         <div><div style="font-size:26px;font-weight:800">${SES.again}</div><div class="small muted">要再溫</div></div>
         <div><div style="font-size:26px;font-weight:800">${streak()}</div><div class="small muted">連續日數</div></div>
       </div></div>
-      <div class="grid2"><button class="btn-primary" data-act="extraNew">再學 5 個新字</button>
-      <button class="btn-accent" data-act="quiz" data-kind="learned">做個小測驗</button></div>
+      <div class="grid2"><button class="btn-primary" data-act="extraNew" data-track="${SES.track}">再學 5 個新字</button>
+      <button class="btn-accent" data-act="quiz" data-kind="learned" data-track="${SES.track}">做個小測驗</button></div>
       <a class="btn btn-ghost btn-block" style="margin-top:10px" href="#home">返首頁</a>`;
   }
 
@@ -631,12 +673,18 @@
       const hits = ALL.filter(c => (fill(c.en) + ' ' + c.zh + ' ' + c.def).toLowerCase().includes(q)).slice(0, 60);
       res = `<div class="card"><div class="small muted">搵到 ${hits.length} 個</div>${cardList(hits)}</div>`;
     }
-    const groups = CATS.map(([cat, title]) => {
+    const groups = CATS.filter(([cat]) => TRACKS.nurse.cats.includes(cat)).map(([cat, title]) => {
       const ds = DECKS.filter(d => d.cat === cat);
       return `<h2>${title}</h2>` + ds.map(deckRow).join('');
     }).join('');
     const starred = ALL.filter(c => S.stars[c.id]);
-    return `<div class="row between"><h1>📚 字庫</h1><button class="btn-accent" data-act="addWord">＋ 加生字</button></div>
+    const nq = [['learned', '⚡', '已學快測'], ['weak', '🎯', '弱項特訓'], ['spell', '⌨️', '串字'], ['listen', '🎧', '聽力'], ['abbr', '🔤', '縮寫挑戰'], ['all', '🎲', '全部隨機']];
+    return `<div class="row between"><h1>🩺 護理英文</h1><button class="btn-accent" data-act="addWord">＋ 加生字</button></div>
+      <p class="small muted">工作用嘅醫護英文。IELTS 字彙喺「🎓 IELTS → 字彙」。</p>
+      <button class="btn-primary btn-block" data-act="startToday" data-track="nurse">開始護理字卡（溫習 ${dueCount(null, 'nurse')} · 新字 ${newIdsFor('nurse', newLeftToday('nurse')).length}）→</button>
+      <h2>✏️ 測驗</h2><p class="small muted">答錯嘅字會自動加入溫習，仲要照住打 2 次。</p>
+      <div class="grid3" style="gap:8px">${nq.map(([k, ic, t]) => `<button class="btn-ghost" style="flex-direction:column;min-height:64px;font-size:13px" data-act="quiz" data-kind="${k}" data-track="nurse"><span style="font-size:20px">${ic}</span>${t}</button>`).join('')}</div>
+      <h2>📚 字庫</h2>
       <input id="libSearch" type="search" placeholder="搵字（英文／中文）" value="${esc(V._libq || '')}" style="margin:10px 0">
       <div id="libRes">${res}</div>
       ${starred.length ? `<div class="card tight deckrow" data-act="openStarred" style="--dc-soft:rgba(255,193,7,.2)"><div class="ic">⭐</div><div class="grow"><b>收藏</b><div class="small muted">${starred.length} 個</div></div><span>›</span></div>` : ''}
@@ -708,7 +756,7 @@
   let QZ = null;
   const spellable = c => /^[a-zA-Z' -]{3,24}$/.test(c.en) && !deckOf(c).abbr && !deckOf(c).say && !deckOf(c).roots;
   const copyNeed = c => deckOf(c).say ? 1 : 2; // 答錯要抄幾次
-  function startQuiz(kind, deck) {
+  function startQuiz(kind, deck, track) {
     const t = today();
     let pool;
     if (kind === 'deck') pool = ALL.filter(c => c.d === deck);
@@ -718,11 +766,12 @@
     else if (kind === 'listen') pool = ALL.filter(c => S.cards[c.id] && !deckOf(c).roots);
     else if (kind === 'all') pool = ALL.filter(c => enabledDecks().includes(c.d));
     else pool = ALL.filter(c => S.cards[c.id]);
-    if (kind === 'spell' && pool.length < 5) pool = ALL.filter(spellable);
+    if (track && kind !== 'deck') pool = pool.filter(c => trackOf(c) === track);
+    if (kind === 'spell' && pool.length < 5) pool = ALL.filter(c => spellable(c) && (!track || trackOf(c) === track));
     if (pool.length < 4) {
       if (kind === 'weak') { toast('暫時冇弱項 👍 試下快速測驗'); return; }
       toast('已學嘅字未夠，用全部字庫出題');
-      pool = ALL.filter(c => enabledDecks().includes(c.d));
+      pool = ALL.filter(c => enabledDecks().includes(c.d) && (!track || trackOf(c) === track));
     }
     const tts = 'speechSynthesis' in window;
     const qs = shuffle(pool).slice(0, 10).map(c => {
@@ -734,7 +783,7 @@
       const type = types[Math.floor(Math.random() * types.length)];
       return { id: c.id, type, choices: type === 'spell' ? [] : makeChoices(c, type) };
     });
-    QZ = { qs, i: 0, score: 0, answered: false, wrong: [], kind, deck, t, copy: 0 };
+    QZ = { qs, i: 0, score: 0, answered: false, wrong: [], kind, deck, t, copy: 0, track };
     location.hash = '#quizrun';
   }
   function makeChoices(c, type) {
@@ -832,7 +881,10 @@
       `<p class="small muted">讀音用手機內置聲音，同真考試錄音唔同。建議每星期都做一份官方練習卷（見「貼士」）。</p>`;
     else if (IEL.tab === 'gram') body = gramHtml();
     else if (IEL.tab === 'para') body = paraHtml();
-    else if (IEL.tab === 'vocab') body = `${DECKS.filter(d => d.cat === 'ielts').map(deckRow).join('')}
+    else if (IEL.tab === 'vocab') body = `<div class="card tight"><b>🎓 IELTS 字卡同測驗</b>
+        <button class="btn-primary btn-block" style="margin-top:8px" data-act="startToday" data-track="ielts">開始 IELTS 字卡（溫習 ${dueCount(null, 'ielts')} · 新字 ${newIdsFor('ielts', newLeftToday('ielts')).length}）→</button>
+        <div class="row" style="margin-top:8px"><button class="chip" data-act="quiz" data-kind="learned" data-track="ielts">✏️ 測驗</button><button class="chip" data-act="quiz" data-kind="weak" data-track="ielts">🎯 弱項</button><button class="chip" data-act="quiz" data-kind="spell" data-track="ielts">⌨️ 串字</button><button class="chip" data-act="quiz" data-kind="listen" data-track="ielts">🎧 聽力</button></div></div>
+      ${DECKS.filter(d => d.cat === 'ielts').map(deckRow).join('')}
       <h2>🔗 連接詞速查</h2>${linkingHtml()}`;
     else body = tipsHtml();
     return `<h1>🎓 <span class="grad-text">IELTS</span> 溫習</h1>
@@ -965,7 +1017,9 @@
       <div class="card">
         <label>你嘅英文名（用喺句子練習，例如自我介紹）</label><input data-set="name" value="${esc(s.name)}" placeholder="e.g. Amy">
         <label>每日目標（學／溫／測驗共幾多張）</label>${sel('dailyGoal', [[10, '10 — 輕鬆'], [20, '20 — 標準'], [30, '30 — 認真'], [50, '50 — 衝刺']])}
-        <label>每日新字數量</label>${sel('newPerDay', [[5, '5'], [10, '10'], [15, '15'], [20, '20'], [30, '30']])}
+        <label>🩺 護理英文：每日新字</label>${sel('newPerDay', [[0, '0（暫停）'], [5, '5'], [10, '10'], [15, '15'], [20, '20'], [30, '30']])}
+        <label>🩺 護理新字次序</label>${sel('advFirst', [['true', '先學進階字同句子（基本字已識）'], ['false', '全部字庫輪住出']])}
+        <label>🎓 IELTS：每日新字</label>${sel('newIelts', [[0, '0（暫停）'], [5, '5'], [10, '10'], [15, '15'], [20, '20'], [30, '30']])}
         <label>中文翻譯顯示</label>${sel('zhMode', [['tap', '撳先顯示（先試自己諗英文意思）'], ['always', '一揭卡就顯示']])}
         <label>英文口音</label>${sel('accent', [['en-GB', '🇬🇧 英式（IELTS 常用）'], ['en-AU', '🇦🇺 澳洲'], ['en-US', '🇺🇸 美式']])}
         <label>讀音速度：<span id="rateV">${s.rate}</span></label><div class="row" style="flex-wrap:nowrap"><input type="range" min="0.6" max="1.1" step="0.05" data-set="rate" value="${s.rate}"><button class="chip" data-act="speak" data-text="Please take a deep breath in, and out.">🔊 試聽</button></div>
@@ -1359,20 +1413,19 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     0: [['🎯 弱項特訓', 'quiz', 10, 'weak'], ['🎤 口語 1 題', 'speak', 1, 'speak']]
   };
   function todayCount(k) { const t = today(); return S.events.filter(e => e.k === k && fmt(new Date(e.t)) === t).length; }
-  function examCard() {
+  function examCard(inner) {
     const s = S.settings; const t = today();
     const days = s.examDate ? Math.round((new Date(s.examDate) - new Date(t)) / 864e5) : null;
-    const cardsDone = dueCount() === 0 && newLeftToday() === 0;
-    const tasks = [['📚 今日卡（溫習 + 新字）', null, 0, 'cards']].concat(WEEK_PLAN[new Date().getDay()]);
+    const tasks = WEEK_PLAN[new Date().getDay()].slice();
     if (days != null && days >= 0 && days <= 14) tasks.push(['⚡ 衝刺：多做 1 篇閱讀', 'read', 2, 'read']);
     const row = ([label, k, need, go]) => {
-      const done = go === 'cards' ? cardsDone : todayCount(k) >= need;
-      const prog = go === 'cards' ? '' : `<span class="small muted">${Math.min(todayCount(k), need)}/${need}</span>`;
-      const act = go === 'cards' ? 'data-act="startToday"' : go === 'weak' ? 'data-act="quiz" data-kind="weak"' : go === 'dict' ? 'data-act="goDict"' : `data-act="goIelts" data-tab="${go}"`;
+      const done = todayCount(k) >= need;
+      const prog = `<span class="small muted">${Math.min(todayCount(k), need)}/${need}</span>`;
+      const act = go === 'weak' ? 'data-act="quiz" data-kind="weak" data-track="ielts"' : go === 'dict' ? 'data-act="goDict"' : `data-act="goIelts" data-tab="${go}"`;
       return `<button class="btn-ghost btn-block" style="justify-content:space-between;margin-top:6px;${done ? 'opacity:.6' : ''}" ${act}><span>${done ? '✅' : '⬜'} ${esc(label)}</span>${prog}</button>`;
     };
-    return `<div class="card" style="border-left:5px solid #3b82f6">
-      <div class="row between"><b>🗓️ 今日任務</b>${days != null ? `<span class="pill" style="background:var(--grad);color:#fff">${days > 0 ? 'IELTS 倒數 ' + days + ' 日' : days === 0 ? '今日考試！加油 💪' : '考完喇 🎉'}</span>` : `<a class="small" href="#settings">設定考試日期 →</a>`}</div>
+    return `<div ${inner ? 'style="margin-top:12px"' : 'class="card" style="border-left:5px solid #3b82f6"'}>
+      <div class="row between"><b>🗓️ 今日 IELTS 任務</b>${days != null ? `<span class="pill" style="background:var(--grad);color:#fff">${days > 0 ? 'IELTS 倒數 ' + days + ' 日' : days === 0 ? '今日考試！加油 💪' : '考完喇 🎉'}</span>` : `<a class="small" href="#settings">設定考試日期 →</a>`}</div>
       <div class="row between small"><span class="muted">目標 Band ${esc(s.target)} · ${s.examType === 'gt' ? 'General Training' : 'Academic'}</span><a href="#plan"><b>🗺️ 備考路線圖 →</b></a></div>
       ${tasks.map(row).join('')}</div>`;
   }
@@ -1432,10 +1485,11 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       ${sec('🚀', '第一次用：3 步設定', `
         1. <b>加到主畫面</b>：Safari 撳「分享」→「加至主畫面」。咁樣用起嚟似 app，記錄亦唔會被清走。<br>
         2. <b>設定</b>（首頁右上 ⚙️）：填你嘅英文名、每日目標、口音（IELTS 建議英式）、<b>IELTS 考試日期同目標分數</b>。<br>
-        3. 撳首頁「<b>開始今日學習</b>」，試做第一輪。`, true)}
+        3. 撳首頁「<b>開始護理英文字卡</b>」或者「<b>開始 IELTS 字卡</b>」，試做第一輪。`, true)}
       ${sec('☀️', '每日應該做咩？', `
-        首頁有 <b>🗓️ 今日任務</b>，跟住做就得：<br>
-        • 每日：📚 今日卡（溫習 + 新字，約 10 分鐘）<br>
+        首頁兩張卡跟住做就得：<br>
+        • 每日：🩺 護理英文字卡 + 🎓 IELTS 字卡（各約 5–10 分鐘）<br>
+        • IELTS 卡入面有 <b>🗓️ 今日 IELTS 任務</b>：<br>
         • 星期一：閱讀　星期二：聽力 + 聽寫　星期三：寫作　星期四：口語 + 改寫　星期五：文法　星期六：閱讀 + 聽力　星期日：弱項特訓 + 口語<br>
         做完一項會自動打 ✅。完成每日目標會有彩紙 🎉，連續日數 🔥 會加。`)}
       ${sec('📚', '學習卡點用？（唔好淨係睇！）', `
@@ -1445,9 +1499,9 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 記住：<b>自己諗、自己講</b>先會記得，淨係睇答案好快會唔記得。<br>
         • 揭咗之後<b>誠實揀</b>：唔記得（今日會再出）／難／記得／好易（會隔耐啲先再出）。<br>
         • 🔊 聽讀音　🎤 跟讀（電腦會評；iPhone 就聽完跟住讀）　🔎 查字典　☆ 收藏　💌 對呢張卡有意見。<br>
-        • 基本字太易？去「字庫」揀 <b>進階</b> 字庫：🔍 臨床評估、🧪 進階程序、⚗️ 藥理、🧬 進階疾病、🛡️ 感染控制、🧓 長者護理，同埋 🏨 病房日常句子、👩‍⚕️ 同同事溝通。入去字庫頁撳「學 10 個」就得。`)}
+        • 護理新字會自動先出進階字。想揀特定字庫：去「🩺 護理」頁：🔍 臨床評估、🧪 進階程序、⚗️ 藥理、🧬 進階疾病、🛡️ 感染控制、🧓 長者護理，同埋 🏨 病房日常句子、👩‍⚕️ 同同事溝通。入去字庫頁撳「學 10 個」就得。`)}
       ${sec('✏️', '測驗', `
-        「測驗」分頁：快速測驗、弱項特訓、串字、聽力、縮寫挑戰。<b>答錯嘅字會自動加入今日溫習</b>，所以錯咗唔緊要，錯咗先記得牢。<br>答錯之後要<b>照住打 2 次正確答案</b>（句子 1 次）先去下一題，手打一次記得快好多；趕時間可以撳「略過」。`)}
+        護理測驗喺「🩺 護理」頁；IELTS 測驗喺「🎓 IELTS → 字彙」。有快測、弱項特訓、串字、聽力、縮寫挑戰。<b>答錯嘅字會自動加入今日溫習</b>，所以錯咗唔緊要，錯咗先記得牢。<br>答錯之後要<b>照住打 2 次正確答案</b>（句子 1 次）先去下一題，手打一次記得快好多；趕時間可以撳「略過」。`)}
       ${sec('🎓', 'IELTS 練習', `
         「IELTS」分頁：<br>
         • 🎤 <b>口語</b>：Part 1/2/3 題目。撳「🎙️ 開始作答」就同時錄音同計時，講完撳「講完」（或者時間到自動停），<b>AI 會聽你把聲</b>：寫低你講咗咩、估 Band（四項，包括發音）、改文法、指出邊個字讀得唔準，再俾 Band 7 參考答案。Part 2 可以先撳「準備 1 分鐘」，準備完會自動開始錄音。唔想錄音可以打字評分。<br>
@@ -1460,6 +1514,11 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 💡 <b>貼士</b>：評分準則、溫習方法、官方免費練習連結。<br>
         • 口語、寫作題目包括教育、環境、科技、工作、城市等常考話題。<br>
         估分只係按比例估算，題目少，只供參考。題目係按 IELTS 官方題型原創，唔係真題。`)}
+      ${sec('🩺', '護理英文 同 🎓 IELTS：兩條線分開', `
+        • 首頁有兩張卡：<b>🩺 護理英文</b>（工作用：醫護字、病房句子、同同事溝通）同 <b>🎓 IELTS</b>（考試用：字彙、口語、寫作、閱讀、聽力）。各自有「開始字卡」，溫習同新字分開計。<br>
+        • 下面 tab：「🩺 護理」= 醫護字庫同測驗；「🎓 IELTS」= 所有 IELTS 練習，IELTS 字卡同測驗喺「字彙」。<br>
+        • 設定可以分開揀兩條線每日新字幾多個；護理新字預設先學進階字同句子（基本字已識）。<br>
+        • 右上角 🔔：App 有更新會出紅點，撳入去睇改咗咩。`)}
       ${sec('🗺️', '備考路線圖（由而家到考試）', `首頁「今日任務」右上角撳「🗺️ 備考路線圖」：<br>
         • 分 6 個階段：準備 → 摸底 → 補技巧 → 模擬考 → 衝刺 → 考試當日。App 會按考試日期標示「而家做呢個」。<br>
         • 做完一項撳一下就 ✅，再撳取消。「補技巧」同「模擬考」係每星期一重新開始。<br>
@@ -1540,13 +1599,14 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     if (CREC && route !== 'study') stopCardRec();
     if (!['quizrun', 'study', 'listen', 'dict'].includes(route)) { if (window.speechSynthesis) speechSynthesis.cancel(); }
     document.body.classList.toggle('focus', ['study', 'quizrun', 'write', 'read', 'listen', 'dict'].includes(route));
-    const tabFor = { deck: 'library', quizrun: 'quiz', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', settings: 'home', study: 'home', feedback: 'home', help: 'home', plan: 'home' }[route] || route;
+    const tabFor = { deck: DECKMAP[arg] && trackOfDeck(arg) === 'ielts' ? 'ielts' : 'library', quiz: 'library', quizrun: QZ && QZ.track === 'ielts' ? 'ielts' : 'library', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', settings: 'home', study: 'home', feedback: 'home', help: 'home', plan: 'home' }[route] || route;
     document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabFor));
     $('#app').innerHTML = V[route](arg ? decodeURIComponent(arg) : undefined);
     after(route);
   }
   let lastRoute = '';
   function after(route) {
+    if (route === 'home' && !updPopped && S.settings.seenHelp && hasNewUpdate()) { updPopped = true; setTimeout(() => { if (location.hash === '' || location.hash === '#home') { showUpdates(); render(); } }, 700); }
     if (route !== lastRoute) {
       window.scrollTo(0, 0);
       if (['ielts', 'write', 'read'].includes(lastRoute) && !(lastRoute === 'ielts' && route === 'ielts')) { stopTimer(); stopRecording(); }
@@ -1565,11 +1625,12 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     speak: el => speak(el.dataset.text, el),
     speakSlow: el => speak(el.dataset.text, null, 0.6),
     say: el => practiceSay(el.dataset.text, $('#sayOut')),
-    startToday: () => startSession({}),
-    extraNew: () => startSession({ newCount: 5, deck: null }),
+    startToday: el => startSession({ track: (el && el.dataset.track) || 'nurse' }),
+    extraNew: el => startSession({ newCount: 5, deck: null, track: (el && el.dataset.track) || 'nurse' }),
     learnOne: el => { closeModal(); startSession({ ids: [el.dataset.id] }); },
     studyDeck: el => startSession({ deck: el.dataset.deck, newCount: 10 }),
     hint: () => { SES.hint = true; render(); },
+    showUpdates: () => { showUpdates(); render(); },
     sayRec: () => cardRecToggle(),
     recPick: el => {
       if (SES.revealed) return;
@@ -1726,9 +1787,9 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     },
     syncNowBtn: () => syncNow(true).then(render),
     disconnectSync: () => { if (!confirm('喺呢部機中斷同步？（唔會刪除任何資料）')) return; delete SY.token; SY.lastError = ''; saveSY(); render(); toast('已中斷'); },
-    quiz: el => startQuiz(el.dataset.kind, el.dataset.deck),
+    quiz: el => startQuiz(el.dataset.kind, el.dataset.deck, el.dataset.track),
     quizDeckGo: () => startQuiz('deck', $('#quizDeck').value),
-    quizAgain: () => startQuiz(QZ.kind, QZ.deck),
+    quizAgain: () => startQuiz(QZ.kind, QZ.deck, QZ.track),
     exitQuiz: () => { QZ = null; location.hash = '#quiz'; },
     qhint: () => { QZ.hint = true; render(); },
     pick: el => { const q = QZ.qs[QZ.i]; answer(el.dataset.id === q.id, el.dataset.id); },
@@ -1820,8 +1881,8 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
   document.addEventListener('change', e => {
     const t = e.target;
     if (t.dataset.set) {
-      const k = t.dataset.set; const num = ['dailyGoal', 'newPerDay', 'rate'].includes(k);
-      S.settings[k] = num ? Number(t.value) : t.value; save();
+      const k = t.dataset.set; const num = ['dailyGoal', 'newPerDay', 'newIelts', 'rate'].includes(k);
+      S.settings[k] = num ? Number(t.value) : k === 'advFirst' ? t.value === 'true' : t.value; save();
       if (k === 'theme') applyTheme();
       if (k === 'dailyGoal') { const L = logToday(); if (activity(L) < S.settings.dailyGoal) L.goalHit = false; save(); }
       toast('已儲存');

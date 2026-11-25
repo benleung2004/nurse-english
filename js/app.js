@@ -44,7 +44,7 @@
     return {
       settings: Object.assign({}, DEFAULTS, d.settings), cards: d.cards || {}, log: d.log || {},
       custom: d.custom || [], stars: d.stars || {}, drafts: d.drafts || {}, counters: Object.assign({ speak: 0, essay: 0 }, d.counters),
-      events: d.events || [], feedback: d.feedback || [], roadmap: d.roadmap || {}, mocks: d.mocks || []
+      events: d.events || [], feedback: d.feedback || [], roadmap: d.roadmap || {}, mocks: d.mocks || [], reports: d.reports || []
     };
   }
   let S = load();
@@ -153,7 +153,7 @@
       app: 'nurse-english', exportedAt: new Date().toISOString(), contentVersion: NE.cards.length,
       summary: insights(30), settings: S.settings, counters: S.counters, feedback: S.feedback,
       log: S.log, cards: S.cards, stars: S.stars, custom: S.custom, drafts: S.drafts, events: S.events,
-      roadmap: S.roadmap, mocks: S.mocks
+      roadmap: S.roadmap, mocks: S.mocks, reports: S.reports
     };
   }
   function logToday() { const t = today(); return S.log[t] || (S.log[t] = { n: 0, r: 0, q: 0, qt: 0, ex: 0 }); }
@@ -902,6 +902,7 @@
     else body = tipsHtml();
     return `<h1>🎓 <span class="grad-text">IELTS</span> 溫習</h1>
       <p class="muted small">題目為原創練習題（健康／工作話題為主），唔係官方真題。</p>
+      <a class="card tight deckrow" href="#reports" style="display:flex;color:inherit;text-decoration:none"><div class="ic">📈</div><div class="grow"><b>我嘅 AI 報告</b><div class="small muted">${S.reports.length} 份 · 睇分數走勢、逐項評分、匯出 PDF</div></div><span>›</span></a>
       <div class="tabs" style="margin:12px 0">${tabs.map(([k, t]) => `<button class="chip ${IEL.tab === k ? 'on' : ''}" data-act="ieltsTab" data-tab="${k}"><span class="ti">${t.split(' ')[0]}</span>${t.split(' ')[1]}</button>`).join('')}</div>
       ${body}`;
   };
@@ -1276,7 +1277,7 @@
     finally { clearTimeout(t); }
   }
   // 短題（句子、改寫）要快：用 Lite 型號、唔開「思考」、限制長度
-  const AI_LIMIT = { speakAudio: { ms: 60000, tok: 2500 }, sayAudio: { ms: 25000, tok: 900, fast: true }, say: { ms: 10000, tok: 500, fast: true }, para: { ms: 10000, tok: 600, fast: true }, speak: { ms: 30000, tok: 1500 }, essay: { ms: 60000, tok: 3000 } };
+  const AI_LIMIT = { speakAudio: { ms: 80000, tok: 3800 }, sayAudio: { ms: 25000, tok: 900, fast: true }, say: { ms: 10000, tok: 500, fast: true }, para: { ms: 10000, tok: 600, fast: true }, speak: { ms: 45000, tok: 2800 }, essay: { ms: 90000, tok: 4800 } };
   function thinkCfg(m, fast) {
     if (/^gemini-2\.5-flash/.test(m)) return { thinkingBudget: 0 };
     if (/^gemini-3/.test(m)) return { thinkingLevel: fast ? 'minimal' : 'low' };
@@ -1448,7 +1449,9 @@
     }
     throw new Error(last || 'AI 暫時用唔到');
   }
-  const AI_ROLE = 'You are a friendly, honest IELTS examiner and English tutor for a 23-year-old Hong Kong enrolled nurse aiming for IELTS band 6.0–6.5. Explanations must be in Traditional Chinese (Hong Kong style, simple and encouraging). Corrections and model answers must be in English. Be accurate about IELTS band descriptors; do not inflate scores. Reply with JSON only.';
+  const AI_ROLE = 'You are a friendly, honest IELTS examiner and English tutor for a 23-year-old Hong Kong enrolled nurse aiming for IELTS band 6.0–6.5. Explanations must be in Traditional Chinese characters (繁體字, Hong Kong Cantonese style, e.g. 你嘅、係、唔; NEVER Simplified Chinese), simple and encouraging. Corrections and model answers must be in English. Be accurate about IELTS band descriptors; do not inflate scores. Reply with JSON only.';
+  const REPORT_JSON = (crit, extra) => `"criteria": {${crit.map(c => `"${c}": band`).join(', ')}}, "detail": [${crit.map(c => `{"name": "${c}", "band": band, "evidence": "Chinese: which descriptor level her work matches and why, quoting her exact words", "good": "Chinese: what she did well for this criterion", "improve": "Chinese: the specific change needed to reach the next band", "example": "her words → improved English"}`).join(', ')}], "next": ["Chinese: the 3 most important things to practise next, most important first"]${extra || ''}`;
+  const STRICT = 'Mark STRICTLY against the descriptors below like a trained IELTS examiner: give each criterion the highest band whose positive features are ALL present; do not reward effort or inflate; use 0.5 steps only for the overall band.';
   const AI_PROMPTS = {
     essay: (d) => `${AI_ROLE}
 Assess this IELTS Academic Writing Task ${d.task} response (minimum ${d.task === 2 ? 250 : 150} words; it has ${d.wc} words).
@@ -1456,12 +1459,17 @@ Question: ${d.q}
 ${d.extra || ''}
 Response:
 """${d.text}"""
-Return JSON: {"band": overall band (number, 0.5 steps), "criteria": {"${d.task === 2 ? 'Task Response' : 'Task Achievement'}": band, "Coherence and Cohesion": band, "Lexical Resource": band, "Grammatical Range and Accuracy": band}, "summary": "2-3 sentences in Chinese", "strengths": ["Chinese", ...max 3], "improve": ["specific Chinese advice", ...max 4], "corrections": [{"wrong": "exact phrase from the text", "right": "corrected English", "why": "short Chinese reason"} ...max 8 most important], "better": "one improved version of her weakest paragraph in English"}`,
+${STRICT}
+${NE.rubricText(d.task === 2 ? 'writing2' : ['writing1', 'writing2'])}
+${d.task === 1 ? '(For Task 1 use Task Achievement instead of Task Response; the other 3 criteria are the same as Task 2.)' : ''}
+Return JSON: {"band": overall band = average of the 4 criteria rounded to nearest 0.5, ${REPORT_JSON([d.task === 2 ? 'Task Response' : 'Task Achievement', 'Coherence and Cohesion', 'Lexical Resource', 'Grammatical Range and Accuracy'])}, "summary": "2-3 sentences in Chinese", "strengths": ["Chinese", ...max 3], "improve": ["specific Chinese advice", ...max 4], "corrections": [{"wrong": "exact phrase from the text", "right": "corrected English", "why": "short Chinese reason"} ...max 8 most important], "better": "one improved version of her weakest paragraph in English"}`,
     speak: (d) => `${AI_ROLE}
 This is a speech-to-text transcript of her spoken answer to IELTS Speaking Part ${d.part}. Speech recognition may contain small errors; ignore punctuation and obvious recognition mistakes. You cannot hear pronunciation, so do not score it.
 Question: ${d.q}
 Transcript: """${d.text}"""
-Return JSON: {"band": estimated band from fluency, vocabulary and grammar only (number, 0.5 steps), "criteria": {"Fluency and Coherence": band, "Lexical Resource": band, "Grammatical Range and Accuracy": band}, "summary": "Chinese", "strengths": ["Chinese" max 3], "improve": ["Chinese" max 3], "corrections": [{"wrong": "...", "right": "...", "why": "Chinese"} max 6], "better": "a natural band-7 answer to the same question in English, about ${d.part === 2 ? 180 : 60} words, using her ideas"}`,
+${STRICT}
+${NE.rubricText('speaking')}
+Return JSON: {"band": estimated band from fluency, vocabulary and grammar only (number, 0.5 steps), ${REPORT_JSON(['Fluency and Coherence', 'Lexical Resource', 'Grammatical Range and Accuracy'])}, "summary": "Chinese", "strengths": ["Chinese" max 3], "improve": ["Chinese" max 3], "corrections": [{"wrong": "...", "right": "...", "why": "Chinese"} max 6], "better": "a natural band-7 answer to the same question in English, about ${d.part === 2 ? 180 : 60} words, using her ideas"}`,
     para: (d) => `${AI_ROLE}
 She is practising paraphrasing for IELTS. Original: "${d.src}"
 Her paraphrase: "${d.text}"
@@ -1470,7 +1478,9 @@ Return JSON: {"score": 0-10, "sameMeaning": true/false, "summary": "Chinese: doe
 The attached audio (${d.dur} seconds) is her spoken answer to IELTS Speaking Part ${d.part}. Listen carefully.
 Question: ${d.q}
 First transcribe exactly what she said (keep her grammar mistakes, mark long pauses as "..."). Then assess like an IELTS examiner, including pronunciation from the audio. If the audio is silent or not English, say so in summary and give band 0.
-Return JSON: {"transcript": "...", "band": overall band (number, 0.5 steps), "criteria": {"Fluency and Coherence": band, "Lexical Resource": band, "Grammatical Range and Accuracy": band, "Pronunciation": band}, "summary": "2-3 sentences in Chinese", "strengths": ["Chinese" max 3], "improve": ["Chinese" max 3], "corrections": [{"wrong": "exact words she said", "right": "better English", "why": "Chinese"} max 6], "pron": [{"word": "word she mispronounced", "tip": "Chinese tip on how to say it"} max 5], "better": "a natural band-7 answer to the same question in English, about ${d.part === 2 ? 180 : 60} words, using her ideas"}`,
+${STRICT}
+${NE.rubricText('speaking')}
+Return JSON: {"transcript": "...", "band": overall band = average of the 4 criteria rounded to nearest 0.5, ${REPORT_JSON(['Fluency and Coherence', 'Lexical Resource', 'Grammatical Range and Accuracy', 'Pronunciation'])}, "summary": "2-3 sentences in Chinese", "strengths": ["Chinese" max 3], "improve": ["Chinese" max 3], "corrections": [{"wrong": "exact words she said", "right": "better English", "why": "Chinese"} max 6], "pron": [{"word": "word she mispronounced", "tip": "Chinese tip on how to say it"} max 5], "better": "a natural band-7 answer to the same question in English, about ${d.part === 2 ? 180 : 60} words, using her ideas"}`,
     sayAudio: (d) => `${AI_ROLE}
 Situation for a nurse in Hong Kong: "${d.ctx}". She wanted to say (Chinese): "${d.zh}". Model English: "${d.model}".
 The attached audio (${d.dur} seconds) is her saying it. Listen carefully.
@@ -1492,24 +1502,81 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       const res = await aiCall(AI_PROMPTS[kind](data), kind, data.audio ? { mime: data.mime, data: data.audio } : null).finally(() => clearInterval(tick));
       logEv({ k: 'ai', kind, ref: ref || '', band: typeof res.band === 'number' ? res.band : null, score: typeof res.score === 'number' ? res.score : null, input: String(data.audio ? '[錄音 ' + data.dur + ' 秒] ' + (res.transcript || '') : data.text).slice(0, 3000), res });
       if (kind === 'essay' && S.drafts[ref]) S.drafts[ref].ai = { at: Date.now(), res };
+      let rid = '';
+      if (REPORT_KINDS[kind]) {
+        rid = 'r' + Date.now();
+        S.reports.push({ id: rid, t: Date.now(), kind, task: data.task || null, part: data.part || null, q: String(data.q || '').slice(0, 600), input: String(data.audio ? (res.transcript || '') : data.text || '').slice(0, 4000), dur: data.dur || null, res });
+        if (S.reports.length > 300) S.reports.splice(0, S.reports.length - 300);
+      }
       logToday().ex += 3; save(); checkGoal();
-      const b = document.getElementById(boxId); if (b) b.innerHTML = aiResultHtml(res);
+      const b = document.getElementById(boxId); if (b) b.innerHTML = aiResultHtml(res, rid);
       if ((res.band || 0) >= 6.5 || (res.score || 0) >= 8) confetti(60);
     } catch (e) { const b = document.getElementById(boxId); if (b) b.innerHTML = `<div class="fb no">🤖 ${esc(e.message)}</div>`; }
   }
-  function aiResultHtml(r) {
+  const REPORT_KINDS = { essay: '✍️ 寫作', speak: '🎤 口語（打字）', speakAudio: '🎤 口語（錄音）', mock: '🎙️ 模擬口試' };
+  const bandColor = b => b >= 7 ? 'var(--good)' : b >= 6 ? 'var(--primary)' : b >= 5 ? 'var(--warn)' : 'var(--bad)';
+  function reportTable(r) {
+    if (!r.detail || !r.detail.length) return '';
+    const lvl = b => b >= 7 ? '好' : b >= 6 ? '中上' : b >= 5 ? '要加強' : '弱';
+    return `<h3 style="margin-top:12px">📋 逐項評分（跟 IELTS 官方準則）</h3>
+    <table class="data"><tr><th>評分項目</th><th style="text-align:center">分數</th><th>評價</th></tr>${r.detail.map(x => `<tr><td>${esc(x.name)}</td><td style="text-align:center"><b style="color:${bandColor(+x.band)}">${esc(x.band)}</b></td><td class="small" style="color:${bandColor(+x.band)}">${lvl(+x.band)}</td></tr>`).join('')}</table>
+    ${r.detail.map(x => `<div class="rcrit" style="border-left:5px solid ${bandColor(+x.band)}"><div class="row between"><b>${esc(x.name)}</b><b style="font-size:20px;color:${bandColor(+x.band)}">${esc(x.band)}</b></div>
+      ${x.evidence ? `<div class="small muted" style="margin:4px 0">${esc(x.evidence)}</div>` : ''}
+      ${x.good ? `<p class="small" style="margin:6px 0">✅ <b>做得好：</b>${esc(x.good)}</p>` : ''}
+      ${x.improve ? `<p class="small" style="margin:6px 0">🔧 <b>要改善：</b>${esc(x.improve)}</p>` : ''}
+      ${x.example ? `<div class="ex small">${esc(x.example)}</div>` : ''}</div>`).join('')}
+    ${r.next && r.next.length ? `<h3 style="margin-top:12px">🎯 下一步最重要</h3><ol class="small" style="margin:4px 0 0 18px">${r.next.map(x => `<li style="margin:4px 0">${esc(x)}</li>`).join('')}</ol>` : ''}`;
+  }
+  function aiResultHtml(r, rid) {
     const head = typeof r.band === 'number' ? `<div class="score" style="font-size:44px">Band ${esc(r.band)}</div>` : typeof r.score === 'number' ? `<div class="score" style="font-size:44px">${esc(r.score)}/10</div>` : '';
     const crit = r.criteria ? Object.entries(r.criteria).map(([k, v]) => `<div class="row between small" style="margin:3px 0"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('') : '';
     const list = (t, xs) => xs && xs.length ? `<h3 style="margin-top:10px">${t}</h3>${xs.map(x => `<p class="small" style="margin:4px 0">• ${esc(x)}</p>`).join('')}` : '';
     return `<div class="card fade-in" style="border-top:6px solid #8b5cf6"><div class="center">${head}</div>
       ${r.transcript ? `<h3 style="margin-top:6px">📝 AI 聽到你講</h3><div class="ex small">${esc(r.transcript)}</div>` : ''}
-      ${r.summary ? `<p>${esc(r.summary)}</p>` : ''}${crit}
-      ${list('💪 做得好', r.strengths)}${list('🎯 點樣改進', r.improve)}
+      ${r.summary ? `<p>${esc(r.summary)}</p>` : ''}${r.detail && r.detail.length ? reportTable(r) : crit + list('💪 做得好', r.strengths) + list('🎯 點樣改進', r.improve)}
       ${r.corrections && r.corrections.length ? `<h3 style="margin-top:10px">✏️ 改正</h3>${r.corrections.map(c => `<p class="small" style="margin:6px 0"><span style="color:var(--bad);text-decoration:line-through">${esc(c.wrong)}</span> → <b style="color:var(--good)">${esc(c.right)}</b><br><span class="muted">${esc(c.why)}</span></p>`).join('')}` : ''}
       ${r.pron && r.pron.length ? `<h3 style="margin-top:10px">🗣️ 發音要留意</h3>${r.pron.map(x => `<p class="small" style="margin:6px 0"><b>${esc(x.word)}</b> ${spk(x.word)}<br><span class="muted">${esc(x.tip)}</span></p>`).join('')}` : ''}
       ${r.better ? `<h3 style="margin-top:10px">⭐ 參考寫法</h3><div class="ex small">${esc(r.better)} ${spk(r.better)}</div>` : ''}
+      ${rid ? `<div class="grid2 no-print" style="margin-top:12px"><a class="btn btn-ghost" href="#report/${rid}">📄 完整報告／PDF</a><a class="btn btn-ghost" href="#reports">📈 所有報告</a></div><p class="small muted no-print">✅ 報告已自動儲存${syncReady() ? '，並會同步去 GitHub 備份' : ''}。</p>` : ''}
       <p class="small muted" style="margin-top:8px">AI 評分只供參考，同真考官可能有差距（±0.5–1）。</p>${aiUsageHtml(true)}</div>`;
   }
+
+  // ===== AI 報告紀錄 =====
+  const repTitle = x => (REPORT_KINDS[x.kind] || x.kind) + (x.task ? ' Task ' + x.task : x.part ? ' Part ' + x.part : '');
+  const repDate = t => { const d = new Date(t); return fmt(d) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+  function trendSvg(xs) {
+    if (xs.length < 2) return '<p class="small muted">做多 2 次就會見到進步圖。</p>';
+    const W = 320, H = 120, lo = 3, hi = 9, px = i => 20 + i * (W - 30) / (xs.length - 1), py = b => H - 15 - (b - lo) / (hi - lo) * (H - 30);
+    const pts = xs.map((b, i) => px(i) + ',' + py(b)).join(' ');
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:480px">${[5, 6, 7, 8].map(b => `<line x1="20" x2="${W - 10}" y1="${py(b)}" y2="${py(b)}" stroke="var(--line)"/><text x="2" y="${py(b) + 4}" font-size="10" fill="var(--muted)">${b}</text>`).join('')}
+      <polyline points="${pts}" fill="none" stroke="var(--primary)" stroke-width="2.5"/>${xs.map((b, i) => `<circle cx="${px(i)}" cy="${py(b)}" r="3.5" fill="${bandColor(b)}"/>`).join('')}</svg>`;
+  }
+  function critCompare(list) {
+    const names = [...new Set(list.flatMap(x => Object.keys(x.res.criteria || {})))]; if (!names.length) return '';
+    const avg = (xs, n) => { const v = xs.map(x => +((x.res.criteria || {})[n])).filter(v => !isNaN(v)); return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : '–'; };
+    const first = list.slice(0, 3), last = list.slice(-3);
+    return `<table class="data"><tr><th>評分項目</th><th>頭 3 次平均</th><th>最近 3 次平均</th></tr>${names.map(n => { const a = avg(first, n), b = avg(last, n); const up = b !== '–' && a !== '–' ? (+b - +a) : 0;
+      return `<tr><td>${esc(n)}</td><td>${a}</td><td><b style="color:${up > 0 ? 'var(--good)' : up < 0 ? 'var(--bad)' : 'inherit'}">${b}${up > 0 ? ' ↑' : up < 0 ? ' ↓' : ''}</b></td></tr>`; }).join('')}</table>`;
+  }
+  V.reports = () => {
+    const R = S.reports.slice().reverse();
+    const grp = [['✍️ 寫作', S.reports.filter(x => x.kind === 'essay')], ['🎤 口語', S.reports.filter(x => x.kind !== 'essay')]];
+    return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#ielts">‹</a><h1 class="grow">📈 我嘅 AI 報告</h1></div>
+      <p class="small muted">每次寫作／口語 AI 評分都會自動儲存喺度${syncReady() ? '，同埋同步去 GitHub 備份' : ''}。撳入去可以睇完整報告同匯出 PDF。</p>
+      ${grp.map(([t, xs]) => xs.length ? `<div class="card"><b>${t}：分數走勢（${xs.length} 次）</b>${trendSvg(xs.map(x => +x.res.band).filter(b => !isNaN(b)))}${critCompare(xs)}</div>` : '').join('')}
+      ${R.length ? R.map(x => `<a class="card tight" href="#report/${x.id}" style="display:block;color:inherit;text-decoration:none"><div class="row between"><b>${esc(repTitle(x))}</b><b style="color:${bandColor(+x.res.band)}">${x.res.band != null ? 'Band ' + esc(x.res.band) : ''}</b></div>
+        <div class="small muted">${repDate(x.t)} · ${esc(x.q.slice(0, 80))}${x.q.length > 80 ? '…' : ''}</div></a>`).join('') : '<div class="card center muted">未有報告。去「🎓 IELTS → 寫作／口語」做一題，撳 AI 批改就會有。</div>'}`;
+  };
+  V.report = id => {
+    const x = S.reports.find(r => r.id === id); if (!x) return '<p>搵唔到報告</p><a href="#reports">返回</a>';
+    return `<div class="row no-print" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#reports">‹</a><h1 class="grow">📄 報告</h1><button class="btn-accent" data-act="printReport">🖨️ PDF</button></div>
+      <div class="card"><div class="row between"><b>${esc(repTitle(x))}</b><span class="small muted">${repDate(x.t)}</span></div>
+        ${S.settings.name ? `<div class="small muted">考生：${esc(S.settings.name)}</div>` : ''}
+        <h3 style="margin-top:8px">題目</h3><p class="small">${esc(x.q)}</p>
+        <h3>${x.kind === 'essay' ? '你嘅作文' : '你講嘅內容（文字）'}${x.dur ? '（' + x.dur + ' 秒）' : ''}</h3><div class="ex small" style="white-space:pre-wrap">${esc(x.input)}</div></div>
+      ${aiResultHtml(x.res, '')}
+      <p class="small muted no-print">PDF：撳右上「🖨️ PDF」→ iPhone 揀「分享」或「列印」→ 用兩隻手指放大預覽 → 分享 → 儲存到「檔案」。</p>`;
+  };
 
   // ===== 考試倒數 + 今日任務 =====
   const WEEK_PLAN = {
@@ -1633,6 +1700,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 分 6 個階段：準備 → 摸底 → 補技巧 → 模擬考 → 衝刺 → 考試當日。App 會按考試日期標示「而家做呢個」。<br>
         • 做完一項撳一下就 ✅，再撳取消。「補技巧」同「模擬考」係每星期一重新開始。<br>
         • 每次做完 Cambridge 真題，喺「📊 模擬考分數」記低 L/R/W/S，睇進度；Ben 亦會睇到。`)}
+      ${sec('📈', 'AI 報告點睇？', `寫作同口語用 AI 批改之後，AI 會跟 IELTS 官方評分準則逐項評分：每項有分數、做得好、要改善同例子，最後有「下一步最重要」3 件事。<br>• 每份報告自動儲存喺「🎓 IELTS → 📈 我嘅 AI 報告」，有分數走勢圖同每項進步比較。<br>• 已連接同步嘅話，報告會一齊備份去 GitHub。<br>• 想要 PDF：入報告撳「🖨️ PDF」→ 分享 → 儲存到「檔案」。`)}
       ${sec('🤖', 'AI 評分點設定？', `設定 → 「AI 評分」：供應商揀「阿里雲 Qwen」，貼上 Ben 俾你嘅 key（sk- 開頭），撳「儲存並測試」。見到 ✅ 就用得。<br>
         • Qwen 香港用得，亦聽得到你錄音（口語、句子讀音）。新帳號有 100 萬 token 免費（大約幾千次評分），之後都好平。<br>
         • <b>設定 → AI 評分</b> 下面有「📊 AI 用量」：今日用咗幾多次、免費額度估計剩幾多、如果俾錢大約幾錢。<br>
@@ -1710,7 +1778,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     if (CREC && route !== 'study') stopCardRec();
     if (!['quizrun', 'study', 'listen', 'dict'].includes(route)) { if (window.speechSynthesis) speechSynthesis.cancel(); }
     document.body.classList.toggle('focus', ['study', 'quizrun', 'write', 'read', 'listen', 'dict'].includes(route));
-    const tabFor = { deck: DECKMAP[arg] && trackOfDeck(arg) === 'ielts' ? 'ielts' : 'library', quiz: 'library', quizrun: QZ && QZ.track === 'ielts' ? 'ielts' : 'library', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', settings: 'home', study: 'home', feedback: 'home', help: 'home', plan: 'home' }[route] || route;
+    const tabFor = { deck: DECKMAP[arg] && trackOfDeck(arg) === 'ielts' ? 'ielts' : 'library', quiz: 'library', quizrun: QZ && QZ.track === 'ielts' ? 'ielts' : 'library', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', reports: 'ielts', report: 'ielts', settings: 'home', study: 'home', feedback: 'home', help: 'home', plan: 'home' }[route] || route;
     document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabFor));
     $('#app').innerHTML = V[route](arg ? decodeURIComponent(arg) : undefined);
     after(route);
@@ -1803,6 +1871,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     closeModal: () => closeModal(),
     openSubjAlso: el => { const g = el.dataset.grp; const t = ((NE.subjects || []).concat(NE.ieltsTopics || []).find(s => s[0] === g) || [, ''])[1];
       openModal(`<h2 style="margin-top:0">📎 ${esc(t)}：其他字庫相關字</h2><p class="small muted">呢啲字喺基本／進階字庫入面，溫習會跟返原本字庫。</p>${cardList(subjAlso(g))}<button class="btn-ghost btn-block" style="margin-top:12px" data-act="closeModal">關閉</button>`); },
+    printReport: () => setTimeout(() => window.print(), 100),
     openStarred: () => openModal(`<h2 style="margin-top:0">⭐ 收藏</h2>${cardList(ALL.filter(c => S.stars[c.id]))}<button class="btn-ghost btn-block" style="margin-top:12px" data-act="closeModal">關閉</button>`),
     addWord: () => openModal(wordForm()),
     editWord: el => openModal(wordForm(S.custom.find(c => c.id === el.dataset.id))),

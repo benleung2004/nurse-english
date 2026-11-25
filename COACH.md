@@ -29,6 +29,7 @@ mkdir -p logs && gh api repos/benleung2004/nurse-english-data/contents/data/prog
    - `copy`：測驗答錯後照住打正確答案（`id`、`n` 第幾次）
    - `mock`：佢記低嘅模擬考分數 `L`/`R`/`W`/`S`（band）同備註 `n`
 4. `mocks`（Cambridge 模擬考分數列表，睇進度）、`roadmap`（備考路線圖已剔嘅項目：`<階段>:<項目>` 或每週項目 `<階段>:<項目>@<星期一日期>` = 完成日期）。路線圖內容喺 `js/data/roadmap.js`，可以按佢進度調整。
+5. `reports`（AI 寫作／口語報告，最多 300 份）：每份有 `kind`（essay／speak／speakAudio）、`task`／`part`、`q` 題目、`input` 佢寫／講嘅內容、`res.band`、`res.criteria`（各項分數）、`res.detail`（逐項做得好／要改善）、`res.next`。用嚟睇各項分數趨勢，搵最弱嘅評分項目。
 5. `drafts`：IELTS 作文全文（`text`、`done` 完成日期）→ 可以按 IELTS 四項準則批改，估 band，列出常犯文法錯誤。
 6. `log`（每日 n 新字／r 溫習／qt 測驗題數／q 答啱／ex 口語寫作分、`goalHit`）、`cards`（每張卡 SRS：`i` 間隔日數、`l` 唔記得次數、`due`）、`settings`、`custom`（佢自己加嘅生字 = 工作上遇到嘅字，好有參考價值）。
 

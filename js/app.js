@@ -1338,10 +1338,12 @@
         if (!r.ok) {
           const t = await r.text().catch(() => '');
           if (r.status === 401 || /InvalidApiKey/i.test(t)) throw Object.assign(new Error('API key 無效（要用 Singapore 地區嘅 key）'), { fatal: true });
-          if (/Arrearage|overdue|Unpurchased|FreeTierOnly|free tier/i.test(t)) throw Object.assign(new Error('免費額度用完或者戶口冇錢：去阿里雲增值（好平）'), { fatal: true });
+          const code = ((t.match(/"code"\s*:\s*"([^"]+)"/) || [])[1] || r.status) + '';
+          if (/Arrearage|overdue/i.test(t)) throw Object.assign(new Error('阿里雲戶口未俾錢或者未驗證付款方式（' + code + '）'), { fatal: true });
+          if (/Unpurchased|FreeTierOnly|free tier/i.test(t)) { last = m + ' 免費額度用完／未開通，而你開咗「免費額度用完即停」（' + code + '）'; continue; }
           if (r.status === 429) { last = '用得太密，等一分鐘再試'; continue; }
           if (r.status === 404 || /model.*(not|exist)|InvalidModel/i.test(t)) { last = '型號唔存在'; continue; }
-          last = 'Qwen 回應 ' + r.status; continue;
+          last = 'Qwen 回應 ' + code; continue;
         }
         const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '', txt = '', usage = null;
         for (;;) {

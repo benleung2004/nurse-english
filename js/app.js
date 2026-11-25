@@ -706,7 +706,8 @@
 
   // ===== 測驗 =====
   let QZ = null;
-  const spellable = c => /^[a-zA-Z' -]{3,24}$/.test(c.en) && !deckOf(c).abbr && !deckOf(c).say;
+  const spellable = c => /^[a-zA-Z' -]{3,24}$/.test(c.en) && !deckOf(c).abbr && !deckOf(c).say && !deckOf(c).roots;
+  const copyNeed = c => deckOf(c).say ? 1 : 2; // 答錯要抄幾次
   function startQuiz(kind, deck) {
     const t = today();
     let pool;
@@ -733,7 +734,7 @@
       const type = types[Math.floor(Math.random() * types.length)];
       return { id: c.id, type, choices: type === 'spell' ? [] : makeChoices(c, type) };
     });
-    QZ = { qs, i: 0, score: 0, answered: false, wrong: [], kind, deck, t };
+    QZ = { qs, i: 0, score: 0, answered: false, wrong: [], kind, deck, t, copy: 0 };
     location.hash = '#quizrun';
   }
   function makeChoices(c, type) {
@@ -779,7 +780,12 @@
       <b>${QZ.ok ? '✅ 啱！' : '❌ 唔啱'}</b>${QZ.typed != null && !QZ.ok ? ` 你打咗：「${esc(QZ.typed)}」` : ''}<br>
       <b>${esc(fill(c.en))}</b> — ${esc(fill(c.zh))}<br><span class="small">${dk.say ? '' : esc(c.def)}</span>
       ${c.note ? `<div class="small" style="margin-top:4px">💬 ${esc(fill(c.note))}</div>` : ''}</div>
-      <div class="row" style="margin-top:10px;flex-wrap:nowrap"><button class="btn-primary grow" data-act="nextQ">${QZ.i + 1 < QZ.qs.length ? '下一題 →' : '睇結果'}</button>
+      ${!QZ.ok ? (() => { const need = copyNeed(c); const done = QZ.copy >= need;
+        return `<div class="card tight" style="margin-top:10px"><div class="row between"><b>✍️ 打 ${need} 次正確答案，記實佢</b><span>${'✅'.repeat(Math.min(QZ.copy, need))}${'⬜'.repeat(Math.max(0, need - QZ.copy))}</span></div>
+          <div class="term" style="font-size:20px;margin:6px 0">${esc(fill(c.en))}</div>
+          ${done ? '<div class="small" style="color:var(--good)"><b>👍 做得好，記住咗！</b></div>' : `<div class="row" style="flex-wrap:nowrap"><input id="copyIn" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="照住打一次…"><button class="btn-primary" data-act="copyGo">✓</button></div>`}</div>`; })() : ''}
+      <div class="row" style="margin-top:10px;flex-wrap:nowrap"><button class="btn-primary grow" data-act="nextQ" ${!QZ.ok && QZ.copy < copyNeed(c) ? 'disabled style="opacity:.5"' : ''}>${QZ.i + 1 < QZ.qs.length ? '下一題 →' : '睇結果'}</button>
+      ${!QZ.ok && QZ.copy < copyNeed(c) ? '<button class="chip" data-act="copySkip">略過</button>' : ''}
       <button class="chip" data-act="openFb" data-ctx="${esc(c.id)}" aria-label="對呢題有意見">💌</button></div>` : '';
     return `<div class="row" style="flex-wrap:nowrap;margin-bottom:12px"><button class="icon-btn" data-act="exitQuiz">✕</button>
       <div class="progress grow"><div style="width:${QZ.i / QZ.qs.length * 100}%"></div></div><span class="small muted">${QZ.i + 1}/${QZ.qs.length}</span></div>
@@ -1441,7 +1447,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 🔊 聽讀音　🎤 跟讀（電腦會評；iPhone 就聽完跟住讀）　🔎 查字典　☆ 收藏　💌 對呢張卡有意見。<br>
         • 基本字太易？去「字庫」揀 <b>進階</b> 字庫：🔍 臨床評估、🧪 進階程序、⚗️ 藥理、🧬 進階疾病、🛡️ 感染控制、🧓 長者護理，同埋 🏨 病房日常句子、👩‍⚕️ 同同事溝通。入去字庫頁撳「學 10 個」就得。`)}
       ${sec('✏️', '測驗', `
-        「測驗」分頁：快速測驗、弱項特訓、串字、聽力、縮寫挑戰。<b>答錯嘅字會自動加入今日溫習</b>，所以錯咗唔緊要，錯咗先記得牢。`)}
+        「測驗」分頁：快速測驗、弱項特訓、串字、聽力、縮寫挑戰。<b>答錯嘅字會自動加入今日溫習</b>，所以錯咗唔緊要，錯咗先記得牢。<br>答錯之後要<b>照住打 2 次正確答案</b>（句子 1 次）先去下一題，手打一次記得快好多；趕時間可以撳「略過」。`)}
       ${sec('🎓', 'IELTS 練習', `
         「IELTS」分頁：<br>
         • 🎤 <b>口語</b>：Part 1/2/3 題目。撳「🎙️ 開始作答」就同時錄音同計時，講完撳「講完」（或者時間到自動停），<b>AI 會聽你把聲</b>：寫低你講咗咩、估 Band（四項，包括發音）、改文法、指出邊個字讀得唔準，再俾 Band 7 參考答案。Part 2 可以先撳「準備 1 分鐘」，準備完會自動開始錄音。唔想錄音可以打字評分。<br>
@@ -1731,7 +1737,14 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       const c = BY[QZ.qs[QZ.i].id]; const n = s => s.toLowerCase().replace(/[^a-z]/g, '');
       answer(n(v) === n(c.en), null, v);
     },
-    nextQ: () => { QZ.i++; QZ.answered = false; QZ.hint = false; QZ.typed = null; render(); },
+    nextQ: () => { const c = BY[QZ.qs[QZ.i].id]; if (QZ.answered && !QZ.ok && QZ.copy < copyNeed(c)) return; QZ.i++; QZ.answered = false; QZ.hint = false; QZ.typed = null; QZ.copy = 0; render(); },
+    copyGo: () => {
+      const inp = $('#copyIn'); const c = BY[QZ.qs[QZ.i].id]; const v = (inp.value || '').trim(); if (!v) return;
+      const n = x => norm(x).join(' ');
+      if (n(v) === n(fill(c.en))) { QZ.copy = (QZ.copy || 0) + 1; logEv({ k: 'copy', id: c.id, n: QZ.copy }); save(); render(); const ni = $('#copyIn'); if (ni) ni.focus(); }
+      else { inp.classList.remove('shake'); void inp.offsetWidth; inp.classList.add('shake'); toast('未啱，對住上面再打'); }
+    },
+    copySkip: () => { QZ.copy = 99; A.nextQ(); },
     ieltsTab: el => { IEL.tab = el.dataset.tab; stopTimer(); stopRecording(); render(); },
     part: el => { IEL.part = Number(el.dataset.p); stopTimer(); stopRecording(); IEL.audio = null; render(); },
     nextSpeak: () => { IEL.spk = ''; IEL.audio = null; IEL.idx[IEL.part] = (IEL.idx[IEL.part] || 0) + 1 + Math.floor(Math.random() * 3); stopTimer(); stopRecording(); render(); },
@@ -1833,6 +1846,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.id === 'spellIn') { e.preventDefault(); A.spellGo(); }
+    if (e.key === 'Enter' && e.target.id === 'copyIn') { e.preventDefault(); A.copyGo(); }
     if (location.hash === '#study' && SES && !e.target.closest('input,textarea')) {
       if (e.key === ' ' && !SES.revealed) { e.preventDefault(); A.reveal(); }
       else if (SES.revealed && '1234'.includes(e.key)) grade(Number(e.key) - 1);

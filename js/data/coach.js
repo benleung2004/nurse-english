@@ -1,17 +1,19 @@
 // Claude 分析完佢嘅 log 之後更新呢個檔（見 COACH.md）
 // plan：首頁「📌 今期重點」；replies：回覆意見箱（key = 意見 id）
 NE.coach = {
-  updated: '2026-11-21',
+  updated: '2026-11-25',
   plan: {
-    message: '加咗 263 張進階卡：臨床評估、進階程序、藥理、進階疾病、感染控制、長者護理，仲有病房日常句同同事溝通句。基本字太易嘅話，先由呢幾個字庫開始！IELTS 亦加咗 Band 7 程度嘅口語、寫作句型同各話題字彙。學習卡依家係 4 揀 1，快好多 💪',
-    // 例：{ label: '串字練習 10 題', act: 'quiz', kind: 'spell' } 或 { label: '溫藥物字庫', act: 'deck', deck: 'meds' }
+    message: '好勤力！今朝一口氣學咗 40 個新字 👏 基本醫護字你已經好熟（準確率 90% 以上），之後重點：① 去首頁「🗺️ 備考路線圖」填考試日期，跟住做摸底；② 病房句子試下講完整少少，例如 "Have you passed urine today?"；③ 串字得 70%，IELTS 串錯冇分，每日做 10 題串字。',
     focus: [
-      { label: '🔍 臨床評估（進階）', act: 'deck', deck: 'adv-assess' },
-      { label: '⚗️ 藥理', act: 'deck', deck: 'adv-pharm' },
+      { label: '⌨️ 串字練習 10 題', act: 'quiz', kind: 'spell' },
       { label: '🏨 病房日常句子', act: 'deck', deck: 'ph-ward' },
-      { label: '🎙️ IELTS 口語高分表達', act: 'deck', deck: 'ielts-speak7' },
-      { label: '🌏 IELTS 話題字彙', act: 'deck', deck: 'ielts-topics' }
+      { label: '🎙️ IELTS 口語高分表達', act: 'deck', deck: 'ielts-speak7' }
     ]
   },
-  replies: {}
+  replies: {
+    'fb1795244349179': '多謝你搵到呢個 bug！字根題讀出例字（bradycardia），但要你串字根，係 app 出錯。已經修好：字根唔會再出串字題。',
+    'fb1795244569879': '好主意！已經加咗：測驗答錯之後，要照住打 2 次正確答案（句子打 1 次）先去下一題，咁會記得快啲。',
+    'fb1795244739730': '嗰陣係逐個中文字對，唔係 AI，所以「上壓」只計到 60%。而家學習卡已經改咗做 4 揀 1，唔會再有呢個問題。',
+    'fb1795244911053': '收到！已經加咗 263 張進階卡（臨床評估、藥理、感染控制、長者護理等）同 IELTS Band 7 內容。識嘅基本字直接撳「好易」，就會隔好耐先再出。'
+  }
 };

@@ -712,9 +712,14 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
   const hasNewUpdate = () => !!(NE.updates && NE.updates.length && NE.updates[0].id !== S.settings.seenUpdate);
   function showUpdates() {
     const U = NE.updates || [];
+    const seenAt = U.findIndex(u => u.id === S.settings.seenUpdate); const fresh = seenAt < 0 ? U.slice(0, 8) : U.slice(0, seenAt);
+    const shown = fresh.length ? fresh : U.slice(0, 3); const rest = U.filter(u => !shown.includes(u));
+    const card = (u, hl) => `<div class="card tight" style="margin-top:10px;${hl ? 'border-left:5px solid var(--accent)' : ''}"><div class="row between"><b>${esc(u.title)}</b><span class="small muted">${esc(u.id.slice(0, 10))}</span></div>
+        ${u.items.map(x => `<p class="small" style="margin:6px 0">• ${esc(x)}</p>`).join('')}</div>`;
     openModal(`<div class="row between"><h2 style="margin:0">🔔 App 更新</h2><button class="icon-btn" data-act="closeModal">✕</button></div>
-      ${U.map((u, i) => `<div class="card tight" style="margin-top:10px;${i === 0 ? 'border-left:5px solid var(--accent)' : ''}"><div class="row between"><b>${esc(u.title)}</b><span class="small muted">${esc(u.id)}</span></div>
-        ${u.items.map(x => `<p class="small" style="margin:6px 0">• ${esc(x)}</p>`).join('')}</div>`).join('')}
+      ${fresh.length ? `<p class="small muted" style="margin:6px 0 0">有 ${fresh.length} 個新更新</p>` : ''}
+      ${shown.map((u, i) => card(u, i === 0)).join('')}
+      ${rest.length ? `<details style="margin-top:10px"><summary class="small">之前嘅更新（${rest.length}）</summary>${rest.map(u => card(u, false)).join('')}</details>` : ''}
       <p class="small muted">有咩想改，用首頁「💌 意見箱」話俾 Ben 知。</p>
       <button class="btn-primary btn-block" data-act="closeModal">知道喇 👍</button>`);
     if (U.length) { S.settings.seenUpdate = U[0].id; save(); }

@@ -1311,7 +1311,28 @@
   // ===== AI 供應商：Qwen（阿里雲，香港用得、聽到錄音）或 Gemini（香港用唔到）=====
   const aiProv = () => AIC.provider || (AIC.key && AIC.key.startsWith('AIza') ? 'gemini' : 'qwen');
   const QWEN_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions';
-  const QWEN_MODELS = ['qwen3.8-omni-flash', 'qwen3.5-omni-flash', 'qwen3-omni-flash'];
+  // omni 聽到錄音；帳號未驗證時只有 character 型號有免費額度，錄音就先用 ASR 轉文字
+  const QWEN_MODELS = ['qwen3.8-omni-flash', 'qwen3.5-omni-flash', 'qwen-plus-character', 'qwen-flash-character'];
+  const QWEN_ASR_URL = 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
+  const QWEN_ASR = 'qwen-audio-3.1-asr-flash';
+  const qBad = () => { const d = today(); if (!AIC.qBad || AIC.qBad.day !== d) AIC.qBad = { day: d, m: [] }; return AIC.qBad.m; };
+  async function qwenAsr(media, ms) {
+    const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), ms);
+    try {
+      const fmt = media.mime === 'audio/wav' ? 'wav' : (media.mime.split('/')[1] || 'mp3').replace('mpeg', 'mp3');
+      const r = await fetch(QWEN_ASR_URL, { method: 'POST', signal: ac.signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + AIC.key },
+        body: JSON.stringify({ model: QWEN_ASR, input: { messages: [{ role: 'user', content: [{ type: 'input_audio', input_audio: { data: 'data:' + media.mime + ';base64,' + media.data } }] }] }, parameters: fmt === 'wav' ? { format: 'wav', sample_rate: '16000' } : { format: fmt } }) });
+      const t = await r.text(); let j = {}; try { j = JSON.parse(t); } catch (e) { /* 唔係 JSON */ }
+      if (!r.ok) throw Object.assign(new Error('錄音轉文字失敗（' + (j.code || r.status) + '）'), { fatal: r.status === 401 });
+      const o = j.output || {}; const c = o.choices && o.choices[0] && o.choices[0].message && o.choices[0].message.content;
+      const txt = (o.text || (o.sentence && o.sentence.text) || (Array.isArray(c) ? c.map(x => x.text || '').join(' ') : c) || '').trim();
+      if (j.usage) { const u = qUse(); u.tok += j.usage.total_tokens || 0; }
+      return txt;
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error('錄音轉文字太慢（超時），再試一次');
+      throw e;
+    } finally { clearTimeout(timer); }
+  }
   const QWEN_FREE = 1000000; // 新帳號每個型號 100 萬 token（90 日）
   const QWEN_PRICE = { in: 0.15, out: 0.47 }; // US$／100 萬 token（qwen3.8-omni-flash 國際版）
   function qUse() {
@@ -1325,12 +1346,17 @@
   }
   async function qwenCall(prompt, kind, media) {
     const L = AI_LIMIT[kind] || AI_LIMIT.speak;
-    const models = AIC.qModel ? [AIC.qModel].concat(QWEN_MODELS.filter(m => m !== AIC.qModel)) : QWEN_MODELS;
-    let last = '';
+    const bad = qBad(); const models = QWEN_MODELS.filter(m => !bad.includes(m));
+    let last = '', heard = null;
     for (const m of models) {
-      const content = [];
-      if (media) content.push({ type: 'input_audio', input_audio: { data: 'data:;base64,' + media.data, format: media.mime === 'audio/wav' ? 'wav' : (media.mime.split('/')[1] || 'mp3').replace('mp4', 'm4a') } });
-      content.push({ type: 'text', text: prompt });
+      const content = []; let text = prompt;
+      if (media && m.includes('omni')) content.push({ type: 'input_audio', input_audio: { data: 'data:;base64,' + media.data, format: media.mime === 'audio/wav' ? 'wav' : (media.mime.split('/')[1] || 'mp3').replace('mp4', 'm4a') } });
+      else if (media) {
+        if (heard === null) heard = await qwenAsr(media, L.ms);
+        if (!heard) throw new Error('聽唔到你講嘢：錄大聲啲、近啲再試');
+        text += `\n\nIMPORTANT: no audio is attached. Speech recognition turned her recording into: "${heard}". Use exactly this as "transcript". You cannot hear her: only list a word in "pron" if the recognition clearly mis-heard it (a sign it was mispronounced), and judge Pronunciation mainly from that.`;
+      }
+      content.push({ type: 'text', text });
       const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), L.ms);
       try {
         const r = await fetch(QWEN_URL, { method: 'POST', signal: ac.signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + AIC.key },
@@ -1340,7 +1366,8 @@
           if (r.status === 401 || /InvalidApiKey/i.test(t)) throw Object.assign(new Error('API key 無效（要用 Singapore 地區嘅 key）'), { fatal: true });
           const code = ((t.match(/"code"\s*:\s*"([^"]+)"/) || [])[1] || r.status) + '';
           if (/Arrearage|overdue/i.test(t)) throw Object.assign(new Error('阿里雲戶口未俾錢或者未驗證付款方式（' + code + '）'), { fatal: true });
-          if (/Unpurchased|FreeTierOnly|free tier/i.test(t)) { last = m + ' 免費額度用完／未開通，而你開咗「免費額度用完即停」（' + code + '）'; continue; }
+          if (/Unpurchased/i.test(t)) { bad.push(m); saveAIC(); last = '阿里雲型號未開通：帳號驗證完先用得（' + code + '）'; continue; }
+          if (/FreeTierOnly|free tier/i.test(t)) { last = m + ' 免費額度用完，而你開咗「免費額度用完即停」（' + code + '）'; continue; }
           if (r.status === 429) { last = '用得太密，等一分鐘再試'; continue; }
           if (r.status === 404 || /model.*(not|exist)|InvalidModel/i.test(t)) { last = '型號唔存在'; continue; }
           last = 'Qwen 回應 ' + code; continue;
@@ -1746,7 +1773,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       const prov = $('#aiProvIn').value; const k = ($('#aiKeyIn').value || '').trim();
       if (prov !== aiProv() && !k) return toast('轉供應商要貼返新嘅 API key');
       if (!k && !AIC.key) return toast('請貼上 API key');
-      if (k) { AIC.key = k.replace(/^Bearer\s+/i, ''); AIC.models = null; AIC.qModel = null; } AIC.provider = prov; saveAIC();
+      if (k) { AIC.key = k.replace(/^Bearer\s+/i, ''); AIC.models = null; AIC.qModel = null; } AIC.qBad = null; AIC.provider = prov; saveAIC();
       const out = $('#aiStatus'); out.textContent = '測試緊…（約 5 秒）';
       const test = prov === 'qwen' ? qwenCall('Reply with JSON only: {"ok": true}', 'say').then(() => 'Qwen（' + AIC.qModel + '）') : aiPickModels().then(ms => ms[0]);
       test.then(n => { out.textContent = '✅ 已連接：' + n; toast('🤖 AI 已連接'); }).catch(e => { out.textContent = '⚠️ ' + e.message; });

@@ -998,7 +998,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     let pool;
     if (kind === 'deck') pool = ALL.filter(c => c.d === deck);
     else if (kind === 'weak') pool = ALL.filter(c => S.stars[c.id] || (S.cards[c.id] && S.cards[c.id].l > 0));
-    else if (kind === 'abbr') pool = ALL.filter(c => c.d === 'abbr');
+    else if (kind === 'abbr') pool = ALL.filter(c => deckOf(c).abbr);
     else if (kind === 'spell') pool = ALL.filter(c => S.cards[c.id] && spellable(c));
     else if (kind === 'listen') pool = ALL.filter(c => S.cards[c.id] && !deckOf(c).roots);
     else if (kind === 'all') pool = ALL.filter(c => enabledDecks().includes(c.d));

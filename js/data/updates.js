@@ -1,6 +1,14 @@
 // 🔔 App 更新通知（最新放最頂）。每次改 app 都加一條，id 用日期；佢未睇過就會有紅點同自動彈出
 NE.updates = [
   {
+    id: '2026-11-26-band7', title: 'IELTS Band 7+ 用字',
+    items: [
+      '教育、科技、環境、工作、健康：每個話題多咗「Band 7+」進階字庫',
+      '「✍️ 寫作工具箱」多咗學術搭配（pose a threat, strike a balance…）',
+      '「🎤 口語工具箱」多咗短語動詞同口語慣用語（over the moon, a piece of cake…）',
+    ]
+  },
+  {
     id: '2026-11-26-subjbtn', title: '一撳學成科／測成科',
     items: [
       '「📖 按科目」每個科目頂部多咗「📚 學呢科」同「✏️ 測驗呢科」，唔使逐個字庫撳',

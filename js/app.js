@@ -643,6 +643,47 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     if ($('#aiFab')) return; const b = document.createElement('button'); b.id = 'aiFab'; b.className = 'aifab no-print'; b.setAttribute('aria-label', 'AI 助手'); b.dataset.act = 'chatOpen'; b.textContent = '🤖'; document.body.appendChild(b);
   }
 
+  // ===== 🩺 臨床情境題：好似護士考試，4 揀 1，答完有解釋 =====
+  let CS = null;
+  const caseStats = () => { const st = {}; S.events.filter(e => e.k === 'case').forEach(e => { st[e.id] = e.ok; }); return st; };
+  function startCases(grp, mode) {
+    const all = (NE.cases || []).filter(c => !grp || c.grp === grp); const st = caseStats();
+    let pool = mode === 'wrong' ? all.filter(c => st[c.id] === 0) : mode === 'new' ? all.filter(c => st[c.id] == null) : all;
+    if (!pool.length) pool = all; if (!pool.length) return toast('呢個範圍未有題目');
+    CS = { qs: pool.slice().sort(() => Math.random() - .5).slice(0, 10).map(c => { const ix = [0, 1, 2, 3].sort(() => Math.random() - .5); return Object.assign({}, c, { choices: ix.map(k => c.choices[k]), ans: ix.indexOf(c.ans) }); }), i: 0, ok: 0, picked: null, zh: false, grp: grp || '' };
+    location.hash = '#cases/run'; render();
+  }
+  function casesHome() {
+    const C = NE.cases || []; const st = caseStats(); const done = Object.keys(st).filter(id => C.some(c => c.id === id)).length; const wrong = C.filter(c => st[c.id] === 0).length;
+    const grps = [...new Set(C.map(c => c.grp))]; const name = g => ((NE.subjects || []).find(x => x[0] === g) || [, g])[1];
+    return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#library">‹</a><h1 class="grow">🩺 臨床情境題</h1></div>
+      <p class="small muted">好似護士考試咁：睇臨床情況，揀最啱嘅護理行動。答完有中文解釋，訓練臨床判斷同專業英文。</p>
+      <div class="card"><div class="row between"><b>總共 ${C.length} 題</b><span class="small muted">做過 ${done} · 錯咗 ${wrong}</span></div>
+        <div class="grid3" style="margin-top:10px;gap:8px">
+          <button class="btn-primary" data-act="casesGo" data-mode="all">🎲 隨機 10 題</button>
+          <button class="btn-ghost" data-act="casesGo" data-mode="new">🆕 未做過</button>
+          <button class="btn-ghost" data-act="casesGo" data-mode="wrong" ${wrong ? '' : 'disabled style="opacity:.5"'}>🎯 錯題重做</button></div></div>
+      <h2>按科目</h2>${grps.map(g => { const n = C.filter(c => c.grp === g).length; const d = C.filter(c => c.grp === g && st[c.id] != null).length;
+        return `<div class="card tight deckrow" data-act="casesGo" data-grp="${esc(g)}" data-mode="all"><div class="grow"><b>${esc(name(g))}</b><div class="small muted">${n} 題 · 做過 ${d}</div></div><span>›</span></div>`; }).join('')}`;
+  }
+  function casesRun() {
+    if (!CS) { setTimeout(() => { location.hash = '#cases'; }); return ''; }
+    if (CS.i >= CS.qs.length) {
+      const pct = Math.round(CS.ok / CS.qs.length * 100); if (pct >= 80) setTimeout(() => confetti(), 200);
+      return `<div class="card hero center" style="padding:26px 16px"><div style="font-size:50px">${pct >= 80 ? '🏆' : pct >= 50 ? '👍' : '💪'}</div><h1>${CS.ok} / ${CS.qs.length}</h1><p class="muted">${pct >= 80 ? '臨床判斷好好！' : pct >= 50 ? '唔錯，睇返錯題解釋再做一次' : '多練習，錯題會記低俾你重做'}</p>
+        <div class="grid2" style="margin-top:14px"><button class="btn-primary" data-act="casesGo" data-grp="${esc(CS.grp)}" data-mode="all">再做 10 題</button><a class="btn btn-ghost" href="#cases">返回</a></div></div>`;
+    }
+    const c = CS.qs[CS.i]; const ans = CS.picked != null;
+    return `<div class="row" style="flex-wrap:nowrap;margin-bottom:12px"><a class="icon-btn btn" href="#cases">✕</a><div class="progress grow"><div style="width:${CS.i / CS.qs.length * 100}%"></div></div><span class="small muted">${CS.i + 1}/${CS.qs.length}</span></div>
+      <div class="card" style="border-top:6px solid #0ea5e9"><div class="small muted">🩺 臨床情境</div>
+        <p style="font-size:17px;font-weight:600;margin:6px 0">${esc(c.q)}</p>
+        ${CS.zh || ans ? `<div class="zhline small fade-in">${esc(c.zh)}</div>` : `<button class="reveal-zh" data-act="casesZh">💡 中文意思</button>`}</div>
+      <div class="choices">${c.choices.map((x, k) => { let cls = ''; if (ans) { if (k === c.ans) cls = 'right'; else if (k === CS.picked) cls = 'wrong'; }
+        return `<button class="${cls}" style="text-align:left" data-act="casesPick" data-k="${k}" ${ans ? 'disabled' : ''}>${'ABCD'[k]}. ${esc(x)}</button>`; }).join('')}</div>
+      ${ans ? `<div class="fb ${CS.picked === c.ans ? 'ok' : 'no'}" style="margin-top:12px"><b>${CS.picked === c.ans ? '✅ 啱！' : '❌ 正確答案係 ' + 'ABCD'[c.ans]}</b><p class="small" style="margin:6px 0 0">${esc(c.why)}</p>
+        ${c.key ? `<div class="note small" style="margin-top:8px">🗣️ 實用英文：${esc(c.key)} ${spk(c.key)}</div>` : ''}</div>
+        <div class="row" style="margin-top:10px;flex-wrap:nowrap"><button class="btn-primary grow" data-act="casesNext">${CS.i + 1 < CS.qs.length ? '下一題 →' : '睇結果'}</button><button class="chip" data-act="openFb" data-ctx="case:${esc(c.id)}">💌</button></div>` : ''}`;
+  }
   // ===== 學習 session =====
   let SES = null;
   function startSession(opts) {
@@ -876,6 +917,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     return `<div class="row between"><h1>🩺 護理英文</h1><button class="btn-accent" data-act="addWord">＋ 加生字</button></div>
       <p class="small muted">工作用嘅醫護英文。IELTS 字彙喺「🎓 IELTS → 字彙」。</p>
       <button class="btn-primary btn-block" data-act="startToday" data-track="nurse">開始護理字卡（溫習 ${dueCount(null, 'nurse')} · 新字 ${newIdsFor('nurse', newLeftToday('nurse')).length}）→</button>
+      <a class="card tight deckrow" href="#cases" style="display:flex;color:inherit;text-decoration:none;margin-top:12px"><div class="ic">🩺</div><div class="grow"><b>臨床情境題</b><div class="small muted">${(NE.cases || []).length} 題 · 好似護士考試，訓練臨床判斷</div></div><span>›</span></a>
       <h2>✏️ 測驗</h2><p class="small muted">答錯嘅字會自動加入溫習，仲要照住打 2 次。</p>
       <div class="grid3" style="gap:8px">${nq.map(([k, ic, t]) => `<button class="btn-ghost" style="flex-direction:column;min-height:64px;font-size:13px" data-act="quiz" data-kind="${k}" data-track="nurse"><span style="font-size:20px">${ic}</span>${t}</button>`).join('')}</div>
       <h2>📚 字庫</h2>
@@ -1828,6 +1870,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     if (inList) out += '</ul>'; flushT(); return out;
   };
   V.mock = mockView;
+  V.cases = a => a === 'run' ? casesRun() : casesHome();
   V.coach = () => {
     const W = S.weekly.slice().reverse();
     return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#stats">‹</a><h1 class="grow">📊 學習報告</h1></div>
@@ -2009,6 +2052,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 分 6 個階段：準備 → 摸底 → 補技巧 → 模擬考 → 衝刺 → 考試當日。App 會按考試日期標示「而家做呢個」。<br>
         • 做完一項撳一下就 ✅，再撳取消。「補技巧」同「模擬考」係每星期一重新開始。<br>
         • 每次做完 Cambridge 真題，喺「📊 模擬考分數」記低 L/R/W/S，睇進度；Ben 亦會睇到。`)}
+      ${sec('🩺', '臨床情境題係咩？', `「🩺 護理」頁頂部「臨床情境題」：好似護士考試咁，睇英文臨床情況揀最啱嘅護理行動（4 揀 1），答完有中文解釋同一句實用英文。可以隨機做、做未做過嘅、或者重做錯題，亦可以按科目揀。`)}
       ${sec('🤖', '右下角 AI 助手點用？', `每頁右下角嘅 🤖 圓掣：問溫習計劃、進度、弱項、app 點用都得。<br>• 佢可以幫你改設定（例如考試日期、每日新字）、加生字、開測驗：會出按鈕，你撳先會做。<br>• 想 app 加功能、改內容或者有 bug：同佢講，撳「提交」就會記低，Ben 會叫 Claude 改。<br>• 有 DeepSeek key 就用 DeepSeek（傾偈好啲），冇就用 Qwen。`)}
       ${sec('🎙️', 'AI 模擬口試點用？', `「🎓 IELTS」頂部撳「AI 模擬口試」。AI 考官會讀出問題（🔊 可以再聽），你撳「🔴 開始答」講，講完撳「⏹️ 答完」。<br>• Part 1：4 條日常問題；Part 2：題目卡，可以先準備 1 分鐘，講 1–2 分鐘；Part 3：考官根據你講嘅內容追問 4 條。<br>• 完成後出完整報告（4 項評分），自動儲存喺「📈 我嘅 AI 報告」。全程大約 12–15 分鐘，用大約 10 次 AI。`)}
       ${sec('🤔', '測驗錯咗點算？', `答錯之後撳「🤔 點解錯？問 AI」：AI 會解釋點解錯、兩個字有咩分別、記憶貼士同例句。`)}
@@ -2092,8 +2136,8 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     if (MREC && route !== 'mock') { MREC.discard = true; if (MREC.mr.state === 'recording') MREC.mr.stop(); stopTimer(); }
     if (CREC && route !== 'study') stopCardRec();
     if (!['quizrun', 'study', 'listen', 'dict', 'mock'].includes(route)) { if (window.speechSynthesis) speechSynthesis.cancel(); }
-    document.body.classList.toggle('focus', ['study', 'quizrun', 'write', 'read', 'listen', 'dict', 'mock'].includes(route));
-    const tabFor = { deck: DECKMAP[arg] && trackOfDeck(arg) === 'ielts' ? 'ielts' : 'library', quiz: 'library', quizrun: QZ && QZ.track === 'ielts' ? 'ielts' : 'library', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', reports: 'ielts', report: 'ielts', mock: 'ielts', coach: 'stats', creport: 'stats', settings: 'home', study: 'home', feedback: 'home', help: 'home', plan: 'home' }[route] || route;
+    document.body.classList.toggle('focus', ['study', 'quizrun', 'write', 'read', 'listen', 'dict', 'mock'].includes(route) || (route === 'cases' && arg === 'run'));
+    const tabFor = { deck: DECKMAP[arg] && trackOfDeck(arg) === 'ielts' ? 'ielts' : 'library', quiz: 'library', quizrun: QZ && QZ.track === 'ielts' ? 'ielts' : 'library', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', reports: 'ielts', report: 'ielts', mock: 'ielts', cases: 'library', coach: 'stats', creport: 'stats', settings: 'home', study: 'home', feedback: 'home', help: 'home', plan: 'home' }[route] || route;
     document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabFor));
     $('#app').innerHTML = V[route](arg ? decodeURIComponent(arg) : undefined);
     after(route);
@@ -2192,6 +2236,11 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     openSubjAlso: el => { const g = el.dataset.grp; const t = ((NE.subjects || []).concat(NE.ieltsTopics || []).find(s => s[0] === g) || [, ''])[1];
       openModal(`<h2 style="margin-top:0">📎 ${esc(t)}：其他字庫相關字</h2><p class="small muted">呢啲字喺基本／進階字庫入面，溫習會跟返原本字庫。</p>${cardList(subjAlso(g))}<button class="btn-ghost btn-block" style="margin-top:12px" data-act="closeModal">關閉</button>`); },
     weeklyGo: () => runAI('weekly', { data: weeklyData(), exam: S.settings.examDate, target: S.settings.target, text: '' }, 'aiWeekBox', 'week'),
+    casesGo: el => startCases(el.dataset.grp || '', el.dataset.mode),
+    casesZh: () => { CS.zh = true; render(); },
+    casesPick: el => { if (CS.picked != null) return; const c = CS.qs[CS.i]; CS.picked = +el.dataset.k; const ok = CS.picked === c.ans; if (ok) CS.ok++;
+      logEv({ k: 'case', id: c.id, ok: ok ? 1 : 0, a: CS.picked }); logToday().qt = (logToday().qt || 0) + 1; save(); render(); },
+    casesNext: () => { CS.i++; CS.picked = null; CS.zh = false; render(); window.scrollTo(0, 0); },
     chatOpen: () => chatOpen(),
     chatSend: () => chatSend(($('#chatIn') || {}).value),
     chatSug: el => { const t = el.dataset.t; if (t.endsWith('…')) { const i = $('#chatIn'); i.value = t.replace('…', ''); i.focus(); } else chatSend(t); },

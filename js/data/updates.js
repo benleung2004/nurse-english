@@ -1,6 +1,13 @@
 // 🔔 App 更新通知（最新放最頂）。每次改 app 都加一條，id 用日期；佢未睇過就會有紅點同自動彈出
 NE.updates = [
   {
+    id: '2026-11-26-awl', title: 'IELTS 學術字表（AWL）子表 1–3',
+    items: [
+      '「🎓 IELTS → 字彙 → 其他 IELTS 字庫」多咗學術字表 1、2、3，共 162 個學術詞',
+      '每個詞都有 IELTS 寫作例句同詞族（例如 analyse → analysis, analytical）',
+    ]
+  },
+  {
     id: '2026-11-26-ielts3', title: 'IELTS：再加 9 個話題',
     items: [
       '「🎓 IELTS → 字彙 → 🌏 話題字彙」而家有 19 個話題',

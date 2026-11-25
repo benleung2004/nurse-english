@@ -607,7 +607,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
       <div class="row" style="flex-wrap:nowrap;margin-top:8px"><textarea id="chatIn" rows="2" placeholder="打你想問嘅嘢…" class="grow"></textarea><button class="btn-primary" data-act="chatSend" ${CHAT_BUSY ? 'disabled' : ''}>➤</button></div>
       <p class="small muted" style="margin-top:4px">${AIC.dsKey ? '用 DeepSeek' : 'Qwen'} · 對話會儲存同同步</p>`;
   }
-  function chatOpen() { if (!aiReady()) return toast('先喺設定 → AI 評分貼 key'); openModal(chatHtml()); const l = $('#chatLog'); if (l) l.scrollTop = l.scrollHeight; }
+  function chatOpen() { if (!aiReady()) return openModal(`<h2 style="margin-top:0">🤖 AI 助手</h2><p>要先設定 AI key 先用到。</p><p class="small muted">設定 → 🤖 AI 評分：貼 Qwen key（或者 DeepSeek key），撳「儲存並測試」。</p><div class="grid2"><button class="btn-ghost" data-act="closeModal">遲啲</button><a class="btn btn-primary" href="#settings" data-act="closeModal">去設定</a></div>`); openModal(chatHtml()); const l = $('#chatLog'); if (l) l.scrollTop = l.scrollHeight; }
   function chatRefresh() { if ($('#modal').classList.contains('hidden') || !$('#chatLog')) return; const keep = ($('#chatIn') || {}).value || ''; $('#sheet').innerHTML = chatHtml(); const l = $('#chatLog'); if (l) l.scrollTop = l.scrollHeight; const t = $('#chatIn'); if (t) t.value = keep; }
   async function chatSend(text) {
     text = (text || '').trim(); if (!text || CHAT_BUSY) return;
@@ -2100,7 +2100,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
   }
   let lastRoute = '';
   function after(route) {
-    chatFab(); const fab = $('#aiFab'); if (fab) fab.style.display = aiReady() && !['study', 'quizrun', 'mock', 'write'].includes(route) ? '' : 'none';
+    chatFab(); const fab = $('#aiFab'); if (fab) fab.style.display = !['study', 'quizrun', 'mock', 'write'].includes(route) ? '' : 'none';
     if (route === 'coach') loadClaudeList();
     if (route === 'creport') { const a = (location.hash.split('/')[1] || ''); loadClaudeReport(decodeURIComponent(a)); }
     if (route === 'home' && !updPopped && S.settings.seenHelp && hasNewUpdate()) { updPopped = true; setTimeout(() => { if (location.hash === '' || location.hash === '#home') { showUpdates(); render(); } }, 700); }

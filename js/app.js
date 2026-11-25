@@ -37,14 +37,14 @@
 
   // ===== 資料儲存（只存喺手機 localStorage） =====
   const KEY = 'nurse-english-v1';
-  const DEFAULTS = { name: '', dailyGoal: 20, newPerDay: 10, maxReview: 100, zhMode: 'tap', accent: 'en-GB', rate: 0.9, theme: 'auto', decks: null, remind: '21:00', hideInstall: false, examDate: '', examType: 'ac', target: '6.5', seenHelp: false, newIelts: 10, advFirst: true, seenUpdate: '' };
+  const DEFAULTS = { name: '', dailyGoal: 20, newPerDay: 10, maxReview: 100, zhMode: 'tap', accent: 'en-GB', rate: 0.9, theme: 'auto', decks: null, remind: '21:00', hideInstall: false, examDate: '', examType: 'ac', target: '6.5', seenHelp: false, newIelts: 10, advFirst: true, sentPrompt: true, seenUpdate: '' };
   function load() {
     let d = {};
     try { d = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { d = {}; }
     return {
       settings: Object.assign({}, DEFAULTS, d.settings), cards: d.cards || {}, log: d.log || {},
       custom: d.custom || [], stars: d.stars || {}, drafts: d.drafts || {}, counters: Object.assign({ speak: 0, essay: 0 }, d.counters),
-      events: d.events || [], feedback: d.feedback || [], roadmap: d.roadmap || {}, mocks: d.mocks || [], reports: d.reports || []
+      events: d.events || [], feedback: d.feedback || [], roadmap: d.roadmap || {}, mocks: d.mocks || [], reports: d.reports || [], weekly: d.weekly || []
     };
   }
   let S = load();
@@ -68,6 +68,12 @@
       headers: Object.assign({ Authorization: `Bearer ${SY.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, opts.headers || {})
     }));
   }
+  const CLAUDE_DIR = 'data/claude-reports';
+  async function ghGet(path) {
+    const r = await fetch(`https://api.github.com/repos/${SY.repo}/contents/${path}`, { cache: 'no-store', headers: { Authorization: `Bearer ${SY.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } });
+    if (r.status === 404) return null; if (!r.ok) throw new Error('GitHub 回應 ' + r.status); return r.json();
+  }
+  const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\s/g, '')), ch => ch.charCodeAt(0)));
   // 手機係唯一資料來源：只上載，唔會由 repo 覆蓋手機資料
   async function syncNow(manual) {
     if (!syncReady()) { if (manual) toast('未連接同步'); return; }
@@ -153,7 +159,7 @@
       app: 'nurse-english', exportedAt: new Date().toISOString(), contentVersion: NE.cards.length,
       summary: insights(30), settings: S.settings, counters: S.counters, feedback: S.feedback,
       log: S.log, cards: S.cards, stars: S.stars, custom: S.custom, drafts: S.drafts, events: S.events,
-      roadmap: S.roadmap, mocks: S.mocks, reports: S.reports
+      roadmap: S.roadmap, mocks: S.mocks, reports: S.reports, weekly: S.weekly
     };
   }
   function logToday() { const t = today(); return S.log[t] || (S.log[t] = { n: 0, r: 0, q: 0, qt: 0, ex: 0 }); }
@@ -466,6 +472,103 @@
     runAI('speakAudio', { part: IEL.part, q, audio, mime, dur: Math.round(IEL.audio.dur) }, 'aiSpkBox', 'p' + IEL.part + ':' + (IEL.part === 2 ? it.q : it).slice(0, 60));
   }
 
+  // ===== 🎙️ AI 模擬口試官：Part 1 → 2 → 3，AI 讀題、聽答案、追問，最後出報告 =====
+  let MOCK = null, MREC = null;
+  const pickN = (xs, n) => xs.slice().sort(() => Math.random() - .5).slice(0, n);
+  function mockStart() {
+    if (!aiReady() || aiProv() !== 'qwen') return toast('模擬口試要先喺設定揀「阿里雲 Qwen」同貼 key');
+    const sp = NE.ielts.speaking; const cue = pickN(sp['2'], 1)[0];
+    MOCK = { stage: 'q', qs: pickN(sp['1'], 4).map(q => ({ part: 1, q })).concat([{ part: 2, q: cue.q, b: cue.b }]), i: 0, p3: 0, cue, busy: '', err: '' };
+    location.hash = '#mock'; render(); setTimeout(mockSay, 400);
+  }
+  const mockCur = () => MOCK && MOCK.qs[MOCK.i];
+  function mockSay() { const c = mockCur(); if (!c) return; speak(c.part === 2 ? 'Now I am going to give you a topic. You have one minute to prepare. ' + c.q : c.q, null, 0.9); }
+  async function mockRec() {
+    if (MREC) { if (MREC.mr.state === 'recording') MREC.mr.stop(); return; }
+    if (!navigator.mediaDevices || !window.MediaRecorder) return toast('呢部機唔支援錄音');
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { return toast('未能使用咪高峰：請喺設定允許用咪高峰'); }
+    if (window.speechSynthesis) speechSynthesis.cancel(); stopTimer();
+    const mr = new MediaRecorder(stream); const chunks = []; const c = mockCur(); const max = c.part === 2 ? 120 : 60;
+    MREC = { mr, t0: Date.now() };
+    mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop()); const r = MREC; MREC = null; stopTimer();
+      if (!MOCK || r.discard) return;
+      const dur = Math.round((Date.now() - r.t0) / 1000);
+      if (dur < 3) { toast('太短喇，再答一次'); render(); return; }
+      const blob = new Blob(chunks, { type: mr.mimeType || 'audio/mp4' });
+      MOCK.busy = '🎧 考官聽緊你講…'; render(); progStart('mockG', 'say');
+      try {
+        let audio, mime = 'audio/wav';
+        try { audio = await toWavB64(blob); } catch (e) { audio = b64(new Uint8Array(await blob.arrayBuffer())); mime = (blob.type || 'audio/mp4').split(';')[0]; }
+        const text = await qwenAsr({ mime, data: audio }, 40000);
+        if (!text) throw new Error('聽唔到你講嘢，近啲咪高峰再答一次');
+        c.a = text; c.dur = dur; c.wpm = Math.round(text.split(/\s+/).length / dur * 60); MOCK.err = '';
+        await mockNext();
+      } catch (e) { if (MOCK) MOCK.err = e.message; }
+      progStop(); if (!MOCK) return; MOCK.busy = ''; render();
+      if (MOCK && MOCK.stage === 'q' && !MOCK.err) setTimeout(mockSay, 300);
+    };
+    mr.start(); startTimer(max, c.part === 2 ? '🔴 講夠 1–2 分鐘' : '🔴 答完撳「答完」', () => { if (MREC && MREC.mr.state === 'recording') MREC.mr.stop(); });
+    render();
+  }
+  async function mockNext() {
+    const c = mockCur();
+    if (c.part === 3) MOCK.p3++;
+    if (MOCK.i + 1 < MOCK.qs.length) { MOCK.i++; return; }
+    if (c.part === 2 || (c.part === 3 && MOCK.p3 < 4)) {
+      MOCK.busy = '🤔 考官諗緊下一條問題…'; render(); progStart('mockG', 'say');
+      const hist = MOCK.qs.filter(x => x.part >= 2).map(x => 'Q: ' + x.q + '\nA: ' + x.a).join('\n');
+      const r = await aiCall(`You are an IELTS Speaking examiner running Part 3 (two-way discussion). The Part 2 topic was: "${MOCK.cue.q}".
+Conversation so far:
+${hist}
+Ask ONE natural Part 3 question: a more abstract, general question about society linked to the topic. If her last answer was short or vague, ask a follow-up that pushes her to explain, compare or give reasons. Do not repeat earlier questions. Reply with JSON only: {"question": "..."}`, 'say');
+      MOCK.qs.push({ part: 3, q: String(r.question || 'Why do you think that is?') }); MOCK.i++; return;
+    }
+    MOCK.stage = 'scoring'; render(); await mockScore();
+  }
+  async function mockScore() {
+    const all = MOCK.qs.map(x => `[Part ${x.part}] Q: ${x.q}${x.b ? ' (You should say: ' + x.b.join('; ') + ')' : ''}\nA (${x.dur}s, ${x.wpm} words/min): ${x.a}`).join('\n\n');
+    const prompt = `${AI_ROLE}
+This is a full IELTS Speaking mock test (Part 1, 2 and 3). Answers are speech-recognition transcripts with duration and speaking rate (normal fluent speech is about 120–160 words per minute; very short answers or long Part 2 under 60 seconds limit Fluency). You cannot hear her, so estimate Pronunciation conservatively from recognition errors and speaking rate, and say so in that criterion's evidence.
+${STRICT}
+${NE.rubricText('speaking')}
+TEST:
+${all}
+Return JSON: {"band": overall band = average of the 4 criteria rounded to nearest 0.5, ${REPORT_JSON(['Fluency and Coherence', 'Lexical Resource', 'Grammatical Range and Accuracy', 'Pronunciation'])}, "summary": "2-3 sentences in Chinese", "corrections": [{"wrong": "exact words she said", "right": "better English", "why": "Chinese"} max 8], "better": "a band-7 model answer to her Part 2 topic in English, about 180 words, using her ideas"}`;
+    setTimeout(() => progStart('mockS', 'essay'), 50);
+    try {
+      const res = await aiCall(prompt, 'essay').finally(progStop);
+      const rid = 'r' + Date.now(); const q = 'Part 2: ' + MOCK.cue.q;
+      S.reports.push({ id: rid, t: Date.now(), kind: 'mock', task: null, part: null, q, input: MOCK.qs.map(x => `[P${x.part}] ${x.q}\n→ ${x.a}`).join('\n\n').slice(0, 6000), dur: MOCK.qs.reduce((a, x) => a + (x.dur || 0), 0), res });
+      logEv({ k: 'ai', kind: 'mock', ref: 'mock', band: typeof res.band === 'number' ? res.band : null, score: null, input: q, res });
+      logToday().ex += 8; save(); checkGoal();
+      MOCK = null; location.hash = '#report/' + rid;
+      if ((res.band || 0) >= 6.5) confetti(80);
+    } catch (e) { MOCK.stage = 'q'; MOCK.err = '評分失敗：' + e.message + '（撳「再評分」）'; MOCK.retry = true; render(); }
+  }
+  function mockView() {
+    if (!MOCK) return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#ielts">‹</a><h1 class="grow">🎙️ AI 模擬口試</h1></div>
+      <div class="card"><p>好似真 IELTS 口試咁：AI 考官讀出問題，你錄音回答。</p>
+        <ul class="small" style="margin:6px 0 10px 18px"><li><b>Part 1</b>：4 條日常問題（每條答 20–30 秒）</li><li><b>Part 2</b>：題目卡，1 分鐘準備，講 1–2 分鐘</li><li><b>Part 3</b>：考官根據你講嘅內容追問 4 條深入問題</li></ul>
+        <p class="small muted">全程大約 12–15 分鐘，要安靜地方。完成後會出完整報告（跟官方評分準則），自動儲存。用大約 9–10 次 AI。</p>
+        <button class="btn-primary btn-big btn-block" data-act="mockStart">開始模擬口試 →</button></div>`;
+    if (MOCK.stage === 'scoring') return `<div class="card center" style="padding:24px"><div style="font-size:48px">📝</div><h2>考官評分中…</h2><p class="small muted">大約 20–40 秒，唔好離開呢頁</p></div>${progHtml('mockS', '📝 寫緊完整報告')}`;
+    const c = mockCur(); const total = MOCK.qs.filter(x => x.part === 1).length + 1 + 4; const n = MOCK.i + 1;
+    const recording = !!MREC;
+    return `<div class="row" style="flex-wrap:nowrap;margin-bottom:10px"><button class="icon-btn" data-act="mockQuit">✕</button><div class="progress grow"><div style="width:${(n - 1) / total * 100}%"></div></div><span class="small muted">${n}/${total}</span></div>
+      <div class="card" style="border-top:6px solid #8b5cf6"><span class="pill">Part ${c.part}</span>
+        <div class="row" style="align-items:flex-start;margin-top:8px"><div class="grow" style="font-size:19px;font-weight:700">${esc(c.q)}</div><button class="speak" data-act="mockSay">🔊</button></div>
+        ${c.b ? `<div class="small" style="margin-top:6px">You should say:<ul style="margin:4px 0 0 18px">${c.b.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+      </div>
+      <div class="card center"><div id="timerLabel" class="small muted">${recording ? '' : c.part === 2 ? '先準備 1 分鐘（可以略過），之後撳開始講' : '聽完問題就撳開始答'}</div><div id="timerDisp" class="score" style="font-size:40px">${recording ? '' : '–'}</div>
+        ${MOCK.busy ? progHtml('mockG', MOCK.busy) : MOCK.retry ? `<button class="btn-primary btn-block" data-act="mockRescore">再評分</button>` : `
+          ${c.part === 2 && !recording && !MOCK.prep ? `<button class="btn-ghost btn-block" data-act="mockPrep">⏱️ 開始 1 分鐘準備</button>` : ''}
+          <button class="btn-primary btn-big btn-block" style="margin-top:8px${recording ? ';background:var(--bad)' : ''}" data-act="mockRec">${recording ? '⏹️ 答完' : '🔴 開始答'}</button>`}
+        ${MOCK.err ? `<div class="fb no" style="margin-top:8px">${esc(MOCK.err)}</div>` : ''}</div>
+      ${MOCK.qs.slice(0, MOCK.i).filter(x => x.a).length ? `<details class="subj"><summary class="small">之前答咗嘅（${MOCK.qs.slice(0, MOCK.i).length}）</summary>${MOCK.qs.slice(0, MOCK.i).map(x => `<p class="small"><b>${esc(x.q)}</b><br><span class="muted">${esc(x.a || '')}</span></p>`).join('')}</details>` : ''}`;
+  }
+
   // ===== 學習 session =====
   let SES = null;
   function startSession(opts) {
@@ -630,7 +733,8 @@
         <a class="chip btn" href="${esc(dictUrl(dk.roots ? speakText(c) : c.en))}" target="_blank" rel="noopener">🔎 字典</a>
         <button class="chip" data-act="openFb" data-ctx="${esc(c.id)}">💌 意見</button>
       </div>
-      <div id="sayOut" class="heard"></div>` : '';
+      <div id="sayOut" class="heard"></div>
+      ${sentHtml(c, dk, isNew)}` : '';
     const grades = SES.revealed ? `<div class="grades">
       ${[['唔記得', 0], ['難', 1], ['記得', 2], ['好易', 3]].map(([t, g]) => `<button class="g${g}" data-act="grade" data-g="${g}">${t}<small>${ivLabel(nextState(prev, g).i)}</small></button>`).join('')}
       </div>` : dk.say ? `<button class="btn-primary btn-big btn-block" data-act="reveal">睇答案 👀</button>`
@@ -649,6 +753,16 @@
     ${grades}
     ${SES.revealed ? '<p class="small muted center">誠實揀：唔記得嘅字今日會再出現，記得嘅會隔幾日再溫</p>' : ''}`;
   };
+  function sentHtml(c, dk, isNew) {
+    if (dk.say || dk.roots || dk.abbr || !aiReady()) return '';
+    if (SES.sentSkip === c.id) return '';
+    const open = SES.sentFor === c.id || (isNew && S.settings.sentPrompt !== false);
+    if (!open) return `<button class="chip" data-act="sentOpen" data-id="${esc(c.id)}">✍️ 用呢個字造句（AI 改）</button>`;
+    return `<div class="card tight" style="margin:0"><div class="row between"><b>✍️ 用「${esc(c.en)}」造一句</b><button class="chip" data-act="sentSkip" data-id="${esc(c.id)}">略過</button></div>
+      ${SES.sentRes && SES.sentResFor === c.id ? '' : `<textarea id="sentIn" rows="2" placeholder="例如工作上會講嘅一句…" style="margin-top:6px"></textarea>
+      <button class="btn-primary btn-block" style="margin-top:6px" data-act="sentGo" data-id="${esc(c.id)}">🤖 AI 幫我改</button>`}
+      <div id="aiSentBox">${SES.sentRes && SES.sentResFor === c.id ? aiResultHtml(SES.sentRes, '') : ''}</div></div>`;
+  }
   function studyDone() {
     setTimeout(() => confetti(), 200);
     const n = SES.seen.size;
@@ -835,7 +949,9 @@
     const fb = QZ.answered ? `<div class="fb ${QZ.ok ? 'ok' : 'no'}" style="margin-top:12px">
       <b>${QZ.ok ? '✅ 啱！' : '❌ 唔啱'}</b>${QZ.typed != null && !QZ.ok ? ` 你打咗：「${esc(QZ.typed)}」` : ''}<br>
       <b>${esc(fill(c.en))}</b> — ${esc(fill(c.zh))}<br><span class="small">${dk.say ? '' : esc(c.def)}</span>
-      ${c.note ? `<div class="small" style="margin-top:4px">💬 ${esc(fill(c.note))}</div>` : ''}</div>
+      ${c.note ? `<div class="small" style="margin-top:4px">💬 ${esc(fill(c.note))}</div>` : ''}
+      ${!QZ.ok && !QZ.expRes ? `<div style="margin-top:8px"><button class="chip" data-act="aiExplain">🤔 點解錯？問 AI</button></div>` : ''}</div>
+      <div id="aiExpBox">${QZ.expRes ? aiResultHtml(QZ.expRes, '') : ''}</div>
       ${!QZ.ok ? (() => { const need = copyNeed(c); const done = QZ.copy >= need;
         return `<div class="card tight" style="margin-top:10px"><div class="row between"><b>✍️ 打 ${need} 次正確答案，記實佢</b><span>${'✅'.repeat(Math.min(QZ.copy, need))}${'⬜'.repeat(Math.max(0, need - QZ.copy))}</span></div>
           <div class="term" style="font-size:20px;margin:6px 0">${esc(fill(c.en))}</div>
@@ -903,6 +1019,7 @@
     return `<h1>🎓 <span class="grad-text">IELTS</span> 溫習</h1>
       <p class="muted small">題目為原創練習題（健康／工作話題為主），唔係官方真題。</p>
       <a class="card tight deckrow" href="#reports" style="display:flex;color:inherit;text-decoration:none"><div class="ic">📈</div><div class="grow"><b>我嘅 AI 報告</b><div class="small muted">${S.reports.length} 份 · 睇分數走勢、逐項評分、匯出 PDF</div></div><span>›</span></a>
+      <a class="card tight deckrow" href="#mock" style="display:flex;color:inherit;text-decoration:none"><div class="ic">🎙️</div><div class="grow"><b>AI 模擬口試（Part 1→2→3）</b><div class="small muted">AI 考官讀題、聽你答、追問，最後出完整報告</div></div><span>›</span></a>
       <div class="tabs" style="margin:12px 0">${tabs.map(([k, t]) => `<button class="chip ${IEL.tab === k ? 'on' : ''}" data-act="ieltsTab" data-tab="${k}"><span class="ti">${t.split(' ')[0]}</span>${t.split(' ')[1]}</button>`).join('')}</div>
       ${body}`;
   };
@@ -1010,6 +1127,7 @@
       ['📚', '學咗 50 個', learned >= 50], ['🎓', '學咗 200 個', learned >= 200], ['💎', '熟記 50 個', mastered >= 50], ['✍️', '第一篇作文', S.counters.essay >= 1], ['🎤', '口語 10 題', S.counters.speak >= 10]];
     const weak = ALL.filter(c => S.cards[c.id] && S.cards[c.id].l > 0).sort((a, b) => S.cards[b.id].l - S.cards[a.id].l).slice(0, 12);
     return `<h1>📈 進度</h1>
+      <a class="card tight deckrow" href="#coach" style="display:flex;color:inherit;text-decoration:none"><div class="ic">📊</div><div class="grow"><b>學習報告</b><div class="small muted">AI 週報 · Claude 詳細分析 · 寫作口語報告喺「🎓 IELTS → 📈」</div></div><span>›</span></a>
       <div class="grid3" style="margin-top:12px">
         ${[['🔥', st, '連續日數'], ['🏆', ls, '最長連續'], ['📖', learned, '已學'], ['💎', mastered, '熟記（21日+）'], ['🎯', qt ? Math.round(q / qt * 100) + '%' : '–', '30日測驗準確'], ['⏰', tomorrow, '明日到期']]
         .map(([i, n, l]) => `<div class="card tile" style="margin:0"><div>${i}</div><div class="n">${n}</div><div class="l">${l}</div></div>`).join('')}
@@ -1033,6 +1151,7 @@
         <label>每日目標（學／溫／測驗共幾多張）</label>${sel('dailyGoal', [[10, '10 — 輕鬆'], [20, '20 — 標準'], [30, '30 — 認真'], [50, '50 — 衝刺']])}
         <label>🩺 護理英文：每日新字</label>${sel('newPerDay', [[0, '0（暫停）'], [5, '5'], [10, '10'], [15, '15'], [20, '20'], [30, '30']])}
         <label>🩺 護理新字次序</label>${sel('advFirst', [['true', '先學進階字同句子（基本字已識）'], ['false', '全部字庫輪住出']])}
+        <label>✍️ 學新字後造句（AI 改）</label>${sel('sentPrompt', [['true', '新字自動出造句框（可以略過）'], ['false', '唔自動出，要自己撳']])}
         <label>🎓 IELTS：每日新字</label>${sel('newIelts', [[0, '0（暫停）'], [5, '5'], [10, '10'], [15, '15'], [20, '20'], [30, '30']])}
         <label>中文翻譯顯示</label>${sel('zhMode', [['tap', '撳先顯示（先試自己諗英文意思）'], ['always', '一揭卡就顯示']])}
         <label>英文口音</label>${sel('accent', [['en-GB', '🇬🇧 英式（IELTS 常用）'], ['en-AU', '🇦🇺 澳洲'], ['en-US', '🇺🇸 美式']])}
@@ -1257,7 +1376,7 @@
   let AIC = {}; try { AIC = JSON.parse(localStorage.getItem(AI_KEY) || '{}') || {}; } catch (e) { AIC = {}; }
   const saveAIC = () => { try { localStorage.setItem(AI_KEY, JSON.stringify(AIC)); } catch (e) { /* 冇得存 */ } };
   const aiReady = () => !!AIC.key;
-  const AI_KIND = { essay: '寫作', speak: '口語', speakAudio: '口語（錄音）', sayAudio: '句子（錄音）', para: '改寫', say: '句子講法' };
+  const AI_KIND = { weekly: '每週學習報告', explain: '錯題解釋', sentence: '造句', essay: '寫作', speak: '口語', speakAudio: '口語（錄音）', sayAudio: '句子（錄音）', para: '改寫', say: '句子講法' };
   const AI_PREF = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
   async function aiPickModels() {
     const r = await fetchT('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': AIC.key } }, 8000);
@@ -1277,7 +1396,7 @@
     finally { clearTimeout(t); }
   }
   // 短題（句子、改寫）要快：用 Lite 型號、唔開「思考」、限制長度
-  const AI_LIMIT = { speakAudio: { ms: 80000, tok: 3800 }, sayAudio: { ms: 25000, tok: 900, fast: true }, say: { ms: 10000, tok: 500, fast: true }, para: { ms: 10000, tok: 600, fast: true }, speak: { ms: 45000, tok: 2800 }, essay: { ms: 90000, tok: 4800 } };
+  const AI_LIMIT = { weekly: { ms: 60000, tok: 1800 }, explain: { ms: 15000, tok: 600, fast: true }, sentence: { ms: 15000, tok: 600, fast: true }, speakAudio: { ms: 80000, tok: 3800 }, sayAudio: { ms: 25000, tok: 900, fast: true }, say: { ms: 10000, tok: 500, fast: true }, para: { ms: 10000, tok: 600, fast: true }, speak: { ms: 45000, tok: 2800 }, essay: { ms: 90000, tok: 4800 } };
   function thinkCfg(m, fast) {
     if (/^gemini-2\.5-flash/.test(m)) return { thinkingBudget: 0 };
     if (/^gemini-3/.test(m)) return { thinkingLevel: fast ? 'minimal' : 'low' };
@@ -1358,6 +1477,23 @@
     if (!navigator.onLine) throw new Error('要有網先用到 AI');
     return aiProv() === 'qwen' ? qwenCall(prompt, kind, media) : geminiCall(prompt, kind, media);
   }
+  // ===== AI 進度條：按時間 + 已收到嘅內容估算 0–100% =====
+  let AIPROG = null;
+  const progHtml = (id, label) => `<div class="card aiprog"><div class="row between small"><span id="${id}L">${label}</span><b id="${id}P">0%</b></div><div class="progress" style="margin-top:6px"><div id="${id}B" style="width:0%"></div></div><div class="small muted" id="${id}S" style="margin-top:4px">0 秒</div></div>`;
+  function progStart(id, kind, label) {
+    const L = AI_LIMIT[kind] || AI_LIMIT.speak; const expSec = L.fast ? 5 : L.tok > 3000 ? 30 : 15; const expChars = L.tok * 2.6;
+    progStop(); AIPROG = { id, t0: Date.now(), got: 0 };
+    AIPROG.iv = setInterval(() => {
+      const P = AIPROG; if (!P) return; const sec = (Date.now() - P.t0) / 1000;
+      const byTime = 1 - Math.exp(-sec / expSec * 1.6); const byText = Math.min(1, P.got / expChars);
+      const pct = Math.min(97, Math.round((P.got ? .35 + .65 * Math.max(byText, byTime * .6) : byTime * .4) * 100));
+      const b = document.getElementById(id + 'B'), t = document.getElementById(id + 'P'), st = document.getElementById(id + 'S');
+      if (b) b.style.width = pct + '%'; if (t) t.textContent = pct + '%';
+      if (st) st.textContent = Math.round(sec) + ' 秒 · ' + (P.got ? 'AI 寫緊報告…' : 'AI 睇緊你嘅內容…');
+      if (label) { const l = document.getElementById(id + 'L'); if (l && l.textContent !== label) l.textContent = label; }
+    }, 300);
+  }
+  function progStop() { if (AIPROG) { clearInterval(AIPROG.iv); const b = document.getElementById(AIPROG.id + 'B'), t = document.getElementById(AIPROG.id + 'P'); if (b) b.style.width = '100%'; if (t) t.textContent = '100%'; } AIPROG = null; }
   async function qwenCall(prompt, kind, media) {
     const L = AI_LIMIT[kind] || AI_LIMIT.speak;
     const bad = qBad(); const models = QWEN_MODELS.filter(m => !bad.includes(m));
@@ -1393,7 +1529,7 @@
           for (const ln of lines) {
             if (!ln.startsWith('data:')) continue;
             const d = ln.slice(5).trim(); if (!d || d === '[DONE]') continue;
-            try { const j = JSON.parse(d); const c = j.choices && j.choices[0]; if (c && c.delta && c.delta.content) txt += c.delta.content; if (j.usage) usage = j.usage; } catch (e) { /* 唔完整 */ }
+            try { const j = JSON.parse(d); const c = j.choices && j.choices[0]; if (c && c.delta && c.delta.content) { txt += c.delta.content; if (AIPROG) AIPROG.got = txt.length; } if (j.usage) usage = j.usage; } catch (e) { /* 唔完整 */ }
           }
         }
         const u = qUse(); u.n++;
@@ -1453,6 +1589,20 @@
   const REPORT_JSON = (crit, extra) => `"criteria": {${crit.map(c => `"${c}": band`).join(', ')}}, "detail": [${crit.map(c => `{"name": "${c}", "band": band, "evidence": "Chinese: which descriptor level her work matches and why, quoting her exact words", "good": "Chinese: what she did well for this criterion", "improve": "Chinese: the specific change needed to reach the next band", "example": "her words → improved English"}`).join(', ')}], "next": ["Chinese: the 3 most important things to practise next, most important first"]${extra || ''}`;
   const STRICT = 'Mark STRICTLY against the descriptors below like a trained IELTS examiner: give each criterion the highest band whose positive features are ALL present; do not reward effort or inflate; use 0.5 steps only for the overall band.';
   const AI_PROMPTS = {
+    weekly: (d) => `${AI_ROLE}
+Write a short weekly learning report for her from this app data (last 7 days). Be specific: use the numbers, deck names and words given. Be honest but encouraging.
+Exam date: ${d.exam || 'not set'}; target band: ${d.target}.
+DATA: ${d.data}
+Return JSON: {"summary": "Chinese, 2-3 sentences overview of this week", "strengths": ["Chinese, specific" max 3], "improve": ["Chinese, specific weak areas with numbers" max 4], "plan": ["Chinese: concrete daily actions for next week, e.g. which deck, which IELTS skill, how many minutes" max 5], "focusWords": ["English words she keeps getting wrong" max 8], "encourage": "Chinese, one warm sentence"}`,
+    explain: (d) => `${AI_ROLE}
+She is learning English vocabulary for nursing work and IELTS. Target: "${d.en}" = ${d.zh} (${d.def}).
+Quiz type: ${d.type}. Her wrong answer: "${d.wrong}"${d.wrongZh ? ' (= ' + d.wrongZh + ')' : ''}.
+Explain briefly why her answer is wrong and how the two differ, give a memory trick, and two short example sentences using the target in a hospital or IELTS context.
+Return JSON: {"summary": "Chinese, 2-3 sentences: why it is wrong and the difference", "tip": "Chinese memory trick (word parts, sound, picture or a hospital situation)", "examples": ["English sentence", "English sentence"]}`,
+    sentence: (d) => `${AI_ROLE}
+She has just learned "${d.en}" (${d.zh}; ${d.def}). Her own sentence: "${d.text}".
+Check if the word is used with the right meaning, grammar and collocation. Be encouraging; small mistakes are fine to fix.
+Return JSON: {"score": 0-10, "ok": true if the word is used correctly, "summary": "Chinese, 1-2 sentences", "corrections": [{"wrong": "...", "right": "...", "why": "Chinese"} max 3], "better": "her sentence improved, in English", "examples": ["one more natural example using the word"]}`,
     essay: (d) => `${AI_ROLE}
 Assess this IELTS Academic Writing Task ${d.task} response (minimum ${d.task === 2 ? 250 : 150} words; it has ${d.wc} words).
 Question: ${d.q}
@@ -1496,13 +1646,16 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     const box = document.getElementById(boxId); if (!box) return;
     if (!aiReady()) { box.innerHTML = `<div class="note">🤖 未設定 AI。去 <a href="#settings">設定 → AI 評分</a> 貼上 AI key（Ben 會幫你）。</div>`; return; }
     const t0 = Date.now(); const fastK = (AI_LIMIT[kind] || {}).fast;
-    box.innerHTML = `<div class="card center"><span class="rec" style="background:var(--primary2)"></span> 🤖 AI 批改中… <b id="${boxId}T">0</b> 秒（${fastK ? '通常 2–5 秒' : '通常 5–20 秒'}）</div>`;
-    const tick = setInterval(() => { const el = document.getElementById(boxId + 'T'); if (el) el.textContent = Math.round((Date.now() - t0) / 1000); else clearInterval(tick); }, 500);
+    box.innerHTML = progHtml(boxId + 'G', '🤖 AI 處理中（' + (fastK ? '通常 2–5 秒' : '通常 10–30 秒') + '）');
+    progStart(boxId + 'G', kind); const tick = 0;
     try {
-      const res = await aiCall(AI_PROMPTS[kind](data), kind, data.audio ? { mime: data.mime, data: data.audio } : null).finally(() => clearInterval(tick));
+      const res = await aiCall(AI_PROMPTS[kind](data), kind, data.audio ? { mime: data.mime, data: data.audio } : null).finally(() => { clearInterval(tick); progStop(); });
       logEv({ k: 'ai', kind, ref: ref || '', band: typeof res.band === 'number' ? res.band : null, score: typeof res.score === 'number' ? res.score : null, input: String(data.audio ? '[錄音 ' + data.dur + ' 秒] ' + (res.transcript || '') : data.text).slice(0, 3000), res });
       if (kind === 'essay' && S.drafts[ref]) S.drafts[ref].ai = { at: Date.now(), res };
       let rid = '';
+      if (kind === 'explain' && QZ) QZ.expRes = res;
+      if (kind === 'weekly') { S.weekly.push({ id: 'w' + Date.now(), t: Date.now(), res }); if (S.weekly.length > 60) S.weekly.splice(0, S.weekly.length - 60); }
+      if (kind === 'sentence' && SES) SES.sentRes = res;
       if (REPORT_KINDS[kind]) {
         rid = 'r' + Date.now();
         S.reports.push({ id: rid, t: Date.now(), kind, task: data.task || null, part: data.part || null, q: String(data.q || '').slice(0, 600), input: String(data.audio ? (res.transcript || '') : data.text || '').slice(0, 4000), dur: data.dur || null, res });
@@ -1536,9 +1689,58 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       ${r.summary ? `<p>${esc(r.summary)}</p>` : ''}${r.detail && r.detail.length ? reportTable(r) : crit + list('💪 做得好', r.strengths) + list('🎯 點樣改進', r.improve)}
       ${r.corrections && r.corrections.length ? `<h3 style="margin-top:10px">✏️ 改正</h3>${r.corrections.map(c => `<p class="small" style="margin:6px 0"><span style="color:var(--bad);text-decoration:line-through">${esc(c.wrong)}</span> → <b style="color:var(--good)">${esc(c.right)}</b><br><span class="muted">${esc(c.why)}</span></p>`).join('')}` : ''}
       ${r.pron && r.pron.length ? `<h3 style="margin-top:10px">🗣️ 發音要留意</h3>${r.pron.map(x => `<p class="small" style="margin:6px 0"><b>${esc(x.word)}</b> ${spk(x.word)}<br><span class="muted">${esc(x.tip)}</span></p>`).join('')}` : ''}
+      ${r.plan && r.plan.length ? `<h3 style="margin-top:10px">🗓️ 下星期計劃</h3><ol class="small" style="margin:4px 0 0 18px">${r.plan.map(x => `<li style="margin:4px 0">${esc(x)}</li>`).join('')}</ol>` : ''}
+      ${r.focusWords && r.focusWords.length ? `<h3 style="margin-top:10px">🎯 重點溫習字</h3><div class="row">${r.focusWords.map(w => `<span class="pill">${esc(w)}</span>`).join('')}</div>` : ''}
+      ${r.encourage ? `<div class="note" style="margin-top:10px">💖 ${esc(r.encourage)}</div>` : ''}
+      ${r.tip ? `<div class="note" style="margin-top:10px">💡 ${esc(r.tip)}</div>` : ''}
+      ${r.examples && r.examples.length ? `<h3 style="margin-top:10px">📝 例句</h3>${r.examples.map(x => `<div class="ex small" style="margin:6px 0">${esc(x)} ${spk(x)}</div>`).join('')}` : ''}
       ${r.better ? `<h3 style="margin-top:10px">⭐ 參考寫法</h3><div class="ex small">${esc(r.better)} ${spk(r.better)}</div>` : ''}
       ${rid ? `<div class="grid2 no-print" style="margin-top:12px"><a class="btn btn-ghost" href="#report/${rid}">📄 完整報告／PDF</a><a class="btn btn-ghost" href="#reports">📈 所有報告</a></div><p class="small muted no-print">✅ 報告已自動儲存${syncReady() ? '，並會同步去 GitHub 備份' : ''}。</p>` : ''}
-      <p class="small muted" style="margin-top:8px">AI 評分只供參考，同真考官可能有差距（±0.5–1）。</p>${aiUsageHtml(true)}</div>`;
+      ${typeof r.band === 'number' ? '<p class="small muted" style="margin-top:8px">AI 評分只供參考，同真考官可能有差距（±0.5–1）。</p>' : ''}${aiUsageHtml(true)}</div>`;
+  }
+
+  // ===== 學習報告（App AI 簡短版 + Claude 詳細版）=====
+  function weeklyData() {
+    const ins = insights(7); const since = Date.now() - 7 * 864e5;
+    const reps = S.reports.filter(x => x.t >= since).map(x => ({ kind: x.kind, band: x.res.band, criteria: x.res.criteria }));
+    let n = 0, r = 0, ex = 0; for (let k = 0; k < 7; k++) { const L = S.log[addDays(today(), -k)]; if (L) { n += L.n || 0; r += L.r || 0; ex += L.ex || 0; } }
+    return JSON.stringify({ newCards: n, reviews: r, practice: ex, activeDays: ins.activeDays, strongDecks: ins.strengths, weakDecks: ins.weaknesses, quizTypes: ins.quizTypes, mostMissed: ins.mostMissed.slice(0, 10).map(x => x.en + ' (' + x.zh + ') x' + x.misses), skills: ins.skills, aiReports: reps, totalLearned: Object.keys(S.cards).length });
+  }
+  const mdHtml = md => {
+    const lines = md.replace(/\r/g, '').split('\n'); let out = '', inList = false, tbl = [];
+    const inline = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>');
+    const flushT = () => { if (tbl.length) { const rows = tbl.filter(r => !/^\s*\|?\s*:?-{2,}/.test(r)).map(r => r.replace(/^\s*\||\|\s*$/g, '').split('|').map(x => x.trim()));
+      out += `<div style="overflow-x:auto"><table class="data">${rows.map((r, i) => `<tr>${r.map(x => i ? `<td>${inline(x)}</td>` : `<th>${inline(x)}</th>`).join('')}</tr>`).join('')}</table></div>`; tbl = []; } };
+    lines.forEach(l => {
+      if (/^\s*\|/.test(l)) { if (inList) { out += '</ul>'; inList = false; } tbl.push(l); return; } flushT();
+      const h = l.match(/^(#{1,3})\s+(.*)/); const li = l.match(/^\s*[-*]\s+(.*)/);
+      if (li) { if (!inList) { out += '<ul class="small" style="margin:4px 0 8px 18px">'; inList = true; } out += `<li style="margin:3px 0">${inline(li[1])}</li>`; return; }
+      if (inList) { out += '</ul>'; inList = false; }
+      if (h) out += `<h${h[1].length + 1} style="margin-top:12px">${inline(h[2])}</h${h[1].length + 1}>`; else if (l.trim()) out += `<p class="small">${inline(l)}</p>`;
+    });
+    if (inList) out += '</ul>'; flushT(); return out;
+  };
+  V.mock = mockView;
+  V.coach = () => {
+    const W = S.weekly.slice().reverse();
+    return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#stats">‹</a><h1 class="grow">📊 學習報告</h1></div>
+      <div class="card"><b>🤖 AI 簡短週報</b><p class="small muted">App 入面嘅 AI 會睇你最近 7 日嘅紀錄：強項、弱項、下星期點做。大約 10–30 秒。</p>
+        <button class="btn-primary btn-block" data-act="weeklyGo">生成今個星期嘅報告</button><div id="aiWeekBox"></div></div>
+      ${W.length ? `<h2>之前嘅週報</h2>${W.map(x => `<details class="subj"><summary><b>${repDate(x.t)}</b> <span class="small muted">${esc((x.res.summary || '').slice(0, 40))}…</span></summary>${aiResultHtml(x.res, '')}</details>`).join('')}` : ''}
+      <div class="card" style="margin-top:14px"><b>🧠 Claude 詳細報告</b><p class="small muted">Ben 叫 Claude 詳細分析你嘅紀錄之後，報告會出現喺度（儲存喺你嘅私人 GitHub）。</p><div id="claudeList">${syncReady() ? '載入中…' : '要先喺「設定 → 同步」連接 GitHub 先睇到。'}</div></div>`;
+  };
+  async function loadClaudeList() {
+    const el = $('#claudeList'); if (!el || !syncReady()) return;
+    try {
+      const xs = (await ghGet(CLAUDE_DIR) || []).filter(x => x.type === 'file' && /\.md$/.test(x.name)).sort((a, b) => b.name.localeCompare(a.name));
+      el.innerHTML = xs.length ? xs.map(x => `<a class="card tight" href="#creport/${encodeURIComponent(x.name)}" style="display:block;color:inherit;text-decoration:none;margin:6px 0">🧠 <b>${esc(x.name.replace(/\.md$/, ''))}</b></a>`).join('') : '<p class="small muted">暫時未有。</p>';
+    } catch (e) { el.innerHTML = `<p class="small muted">載入唔到：${esc(e.message)}</p>`; }
+  }
+  V.creport = name => `<div class="row no-print" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#coach">‹</a><h1 class="grow">🧠 ${esc(name.replace(/\.md$/, ''))}</h1><button class="btn-accent" data-act="printReport">🖨️ PDF</button></div><div class="card" id="creportBody">載入中…</div>`;
+  async function loadClaudeReport(name) {
+    const el = $('#creportBody'); if (!el) return;
+    try { const f = await ghGet(CLAUDE_DIR + '/' + name); el.innerHTML = f && f.content ? mdHtml(b64dec(f.content)) : '搵唔到報告'; }
+    catch (e) { el.innerHTML = `載入唔到：${esc(e.message)}`; }
   }
 
   // ===== AI 報告紀錄 =====
@@ -1700,6 +1902,10 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 分 6 個階段：準備 → 摸底 → 補技巧 → 模擬考 → 衝刺 → 考試當日。App 會按考試日期標示「而家做呢個」。<br>
         • 做完一項撳一下就 ✅，再撳取消。「補技巧」同「模擬考」係每星期一重新開始。<br>
         • 每次做完 Cambridge 真題，喺「📊 模擬考分數」記低 L/R/W/S，睇進度；Ben 亦會睇到。`)}
+      ${sec('🎙️', 'AI 模擬口試點用？', `「🎓 IELTS」頂部撳「AI 模擬口試」。AI 考官會讀出問題（🔊 可以再聽），你撳「🔴 開始答」講，講完撳「⏹️ 答完」。<br>• Part 1：4 條日常問題；Part 2：題目卡，可以先準備 1 分鐘，講 1–2 分鐘；Part 3：考官根據你講嘅內容追問 4 條。<br>• 完成後出完整報告（4 項評分），自動儲存喺「📈 我嘅 AI 報告」。全程大約 12–15 分鐘，用大約 10 次 AI。`)}
+      ${sec('🤔', '測驗錯咗點算？', `答錯之後撳「🤔 點解錯？問 AI」：AI 會解釋點解錯、兩個字有咩分別、記憶貼士同例句。`)}
+      ${sec('✍️', '造句練習係咩？', `學新字時，翻轉張卡會出「用呢個字造一句」。寫完撳「🤖 AI 幫我改」，AI 會話你用得啱唔啱同改好。唔想做就撳「略過」；設定入面可以關咗自動出。`)}
+      ${sec('📊', '學習報告喺邊？', `「📈 進度」頂部撳「學習報告」：<br>• 🤖 AI 簡短週報：一撳就分析最近 7 日嘅強項、弱項同下星期計劃。<br>• 🧠 Claude 詳細報告：Ben 叫 Claude 詳細分析之後，報告會出現喺度（要連接同步）。`)}
       ${sec('📈', 'AI 報告點睇？', `寫作同口語用 AI 批改之後，AI 會跟 IELTS 官方評分準則逐項評分：每項有分數、做得好、要改善同例子，最後有「下一步最重要」3 件事。<br>• 每份報告自動儲存喺「🎓 IELTS → 📈 我嘅 AI 報告」，有分數走勢圖同每項進步比較。<br>• 已連接同步嘅話，報告會一齊備份去 GitHub。<br>• 想要 PDF：入報告撳「🖨️ PDF」→ 分享 → 儲存到「檔案」。`)}
       ${sec('🤖', 'AI 評分點設定？', `設定 → 「AI 評分」：供應商揀「阿里雲 Qwen」，貼上 Ben 俾你嘅 key（sk- 開頭），撳「儲存並測試」。見到 ✅ 就用得。<br>
         • Qwen 香港用得，亦聽得到你錄音（口語、句子讀音）。新帳號有 100 萬 token 免費（大約幾千次評分），之後都好平。<br>
@@ -1775,16 +1981,19 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     const raw = (location.hash || '#home').slice(1); const [r, arg] = raw.split('/');
     const route = V[r] ? r : 'home';
     if (REC && route !== 'ielts') { stopRecording(); stopTimer(); }
+    if (MREC && route !== 'mock') { MREC.discard = true; if (MREC.mr.state === 'recording') MREC.mr.stop(); stopTimer(); }
     if (CREC && route !== 'study') stopCardRec();
-    if (!['quizrun', 'study', 'listen', 'dict'].includes(route)) { if (window.speechSynthesis) speechSynthesis.cancel(); }
-    document.body.classList.toggle('focus', ['study', 'quizrun', 'write', 'read', 'listen', 'dict'].includes(route));
-    const tabFor = { deck: DECKMAP[arg] && trackOfDeck(arg) === 'ielts' ? 'ielts' : 'library', quiz: 'library', quizrun: QZ && QZ.track === 'ielts' ? 'ielts' : 'library', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', reports: 'ielts', report: 'ielts', settings: 'home', study: 'home', feedback: 'home', help: 'home', plan: 'home' }[route] || route;
+    if (!['quizrun', 'study', 'listen', 'dict', 'mock'].includes(route)) { if (window.speechSynthesis) speechSynthesis.cancel(); }
+    document.body.classList.toggle('focus', ['study', 'quizrun', 'write', 'read', 'listen', 'dict', 'mock'].includes(route));
+    const tabFor = { deck: DECKMAP[arg] && trackOfDeck(arg) === 'ielts' ? 'ielts' : 'library', quiz: 'library', quizrun: QZ && QZ.track === 'ielts' ? 'ielts' : 'library', write: 'ielts', read: 'ielts', listen: 'ielts', dict: 'ielts', reports: 'ielts', report: 'ielts', mock: 'ielts', coach: 'stats', creport: 'stats', settings: 'home', study: 'home', feedback: 'home', help: 'home', plan: 'home' }[route] || route;
     document.querySelectorAll('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === tabFor));
     $('#app').innerHTML = V[route](arg ? decodeURIComponent(arg) : undefined);
     after(route);
   }
   let lastRoute = '';
   function after(route) {
+    if (route === 'coach') loadClaudeList();
+    if (route === 'creport') { const a = (location.hash.split('/')[1] || ''); loadClaudeReport(decodeURIComponent(a)); }
     if (route === 'home' && !updPopped && S.settings.seenHelp && hasNewUpdate()) { updPopped = true; setTimeout(() => { if (location.hash === '' || location.hash === '#home') { showUpdates(); render(); } }, 700); }
     if (route !== lastRoute) {
       window.scrollTo(0, 0);
@@ -1871,6 +2080,13 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     closeModal: () => closeModal(),
     openSubjAlso: el => { const g = el.dataset.grp; const t = ((NE.subjects || []).concat(NE.ieltsTopics || []).find(s => s[0] === g) || [, ''])[1];
       openModal(`<h2 style="margin-top:0">📎 ${esc(t)}：其他字庫相關字</h2><p class="small muted">呢啲字喺基本／進階字庫入面，溫習會跟返原本字庫。</p>${cardList(subjAlso(g))}<button class="btn-ghost btn-block" style="margin-top:12px" data-act="closeModal">關閉</button>`); },
+    weeklyGo: () => runAI('weekly', { data: weeklyData(), exam: S.settings.examDate, target: S.settings.target, text: '' }, 'aiWeekBox', 'week'),
+    mockStart: () => mockStart(),
+    mockSay: () => mockSay(),
+    mockRec: () => mockRec(),
+    mockPrep: () => { MOCK.prep = 1; render(); startTimer(60, '📝 準備緊…時間到會響', () => toast('準備時間完，撳開始講')); },
+    mockRescore: () => { MOCK.retry = false; MOCK.err = ''; MOCK.stage = 'scoring'; render(); mockScore(); },
+    mockQuit: () => { if (!confirm('離開模擬口試？今次進度會冇咗。')) return; if (MREC) { MREC.discard = true; if (MREC.mr.state === 'recording') MREC.mr.stop(); } stopTimer(); MOCK = null; location.hash = '#ielts'; },
     printReport: () => setTimeout(() => window.print(), 100),
     openStarred: () => openModal(`<h2 style="margin-top:0">⭐ 收藏</h2>${cardList(ALL.filter(c => S.stars[c.id]))}<button class="btn-ghost btn-block" style="margin-top:12px" data-act="closeModal">關閉</button>`),
     addWord: () => openModal(wordForm()),
@@ -1983,7 +2199,20 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       const c = BY[QZ.qs[QZ.i].id]; const n = s => s.toLowerCase().replace(/[^a-z]/g, '');
       answer(n(v) === n(c.en), null, v);
     },
-    nextQ: () => { const c = BY[QZ.qs[QZ.i].id]; if (QZ.answered && !QZ.ok && QZ.copy < copyNeed(c)) return; QZ.i++; QZ.answered = false; QZ.hint = false; QZ.typed = null; QZ.copy = 0; render(); },
+    nextQ: () => { const c = BY[QZ.qs[QZ.i].id]; if (QZ.answered && !QZ.ok && QZ.copy < copyNeed(c)) return; QZ.i++; QZ.answered = false; QZ.hint = false; QZ.typed = null; QZ.copy = 0; QZ.expRes = null; render(); },
+    sentOpen: el => { SES.sentFor = el.dataset.id; render(); setTimeout(() => { const t = $('#sentIn'); if (t) t.focus(); }, 50); },
+    sentSkip: el => { SES.sentSkip = el.dataset.id; render(); },
+    sentGo: el => {
+      const c = BY[el.dataset.id]; const text = ($('#sentIn').value || '').trim();
+      if (text.split(/\s+/).length < 3) return toast('寫一句完整句子先（最少 3 個字）');
+      SES.sentResFor = c.id; SES.sentRes = null;
+      runAI('sentence', { en: fill(c.en), zh: fill(c.zh), def: c.def, text }, 'aiSentBox', c.id);
+    },
+    aiExplain: () => {
+      const q = QZ.qs[QZ.i]; const c = BY[q.id]; const w = QZ.picked && BY[QZ.picked];
+      const T = { mcZh: '睇英文揀中文', mcEn: '睇解釋揀英文', listen: '聽讀音揀意思', spell: '聽讀音串字' }[q.type] || q.type;
+      runAI('explain', { en: fill(c.en), zh: fill(c.zh), def: c.def, type: T, wrong: q.type === 'spell' ? (QZ.typed || '') : w ? fill(w.en) : '', wrongZh: w ? fill(w.zh) : '' }, 'aiExpBox', c.id);
+    },
     copyGo: () => {
       const inp = $('#copyIn'); const c = BY[QZ.qs[QZ.i].id]; const v = (inp.value || '').trim(); if (!v) return;
       const n = x => norm(x).join(' ');
@@ -2067,7 +2296,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     const t = e.target;
     if (t.dataset.set) {
       const k = t.dataset.set; const num = ['dailyGoal', 'newPerDay', 'newIelts', 'rate'].includes(k);
-      S.settings[k] = num ? Number(t.value) : k === 'advFirst' ? t.value === 'true' : t.value; save();
+      S.settings[k] = num ? Number(t.value) : (k === 'advFirst' || k === 'sentPrompt') ? t.value === 'true' : t.value; save();
       if (k === 'theme') applyTheme();
       if (k === 'dailyGoal') { const L = logToday(); if (activity(L) < S.settings.dailyGoal) L.goalHit = false; save(); }
       toast('已儲存');

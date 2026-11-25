@@ -29,6 +29,7 @@ mkdir -p logs && gh api repos/benleung2004/nurse-english-data/contents/data/prog
    - `copy`：測驗答錯後照住打正確答案（`id`、`n` 第幾次）
    - `mock`：佢記低嘅模擬考分數 `L`/`R`/`W`/`S`（band）同備註 `n`
 4. `mocks`（Cambridge 模擬考分數列表，睇進度）、`roadmap`（備考路線圖已剔嘅項目：`<階段>:<項目>` 或每週項目 `<階段>:<項目>@<星期一日期>` = 完成日期）。路線圖內容喺 `js/data/roadmap.js`，可以按佢進度調整。
+6. `weekly`：App 內 AI 週報（`res.summary／strengths／improve／plan／focusWords`）。
 5. `reports`（AI 寫作／口語報告，最多 300 份）：每份有 `kind`（essay／speak／speakAudio）、`task`／`part`、`q` 題目、`input` 佢寫／講嘅內容、`res.band`、`res.criteria`（各項分數）、`res.detail`（逐項做得好／要改善）、`res.next`。用嚟睇各項分數趨勢，搵最弱嘅評分項目。
 5. `drafts`：IELTS 作文全文（`text`、`done` 完成日期）→ 可以按 IELTS 四項準則批改，估 band，列出常犯文法錯誤。
 6. `log`（每日 n 新字／r 溫習／qt 測驗題數／q 答啱／ex 口語寫作分、`goalHit`）、`cards`（每張卡 SRS：`i` 間隔日數、`l` 唔記得次數、`due`）、`settings`、`custom`（佢自己加嘅生字 = 工作上遇到嘅字，好有參考價值）。
@@ -69,3 +70,14 @@ mkdir -p logs && gh api repos/benleung2004/nurse-english-data/contents/data/prog
 - `logs/` 已寫入 `.gitignore`，**唔好上載**；作文同意見只可以喺本機睇
 - Repo 係 public：唔好將佢嘅名、log 內容、作文寫入 code 或 commit message
 - `coach.js` 嘅 `plan.message` 同 `replies` 都會公開喺網上：只寫學習建議，唔好引用佢意見原文或者個人資料
+
+
+## Claude 詳細學習報告（app 會顯示）
+
+用戶叫「幫佢寫詳細學習報告」時：
+1. 讀最新 `data/progress.json`（同上面一樣存去 `logs/`）。
+2. 用 Markdown 寫報告（支援 `#`／`##` 標題、`-` 列表、`**粗體**`、`|` 表格）：本週概況、各技能數據、AI 報告各評分項目趨勢、最常錯嘅字、具體下週計劃、鼓勵。用香港繁體中文。
+3. 上載去**私人** data repo：`data/claude-reports/YYYY-MM-DD.md`，例如：
+   `gh api -X PUT repos/benleung2004/nurse-english-data/contents/data/claude-reports/2026-11-30.md -f message="Claude report" -f content="$(base64 -i report.md)"`
+   （上載前要問用戶；呢個 repo 係私人，可以寫佢嘅具體表現，但唔好寫入公開 app repo。）
+4. 佢喺 app「📈 進度 → 學習報告 → 🧠 Claude 詳細報告」就睇到，亦可以撳 🖨️ 匯出 PDF。

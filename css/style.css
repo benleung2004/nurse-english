@@ -247,3 +247,4 @@ body.focus { padding-bottom: 20px; }
   .rtable tr { break-inside: avoid; }
 }
 .rcrit { background: var(--surface2); border-radius: 12px; padding: 10px 12px; margin: 10px 0; break-inside: avoid; }
+.aiprog .progress > div { transition: width .3s ease; background: linear-gradient(90deg, var(--primary), #8b5cf6); }

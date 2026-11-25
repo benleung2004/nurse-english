@@ -675,8 +675,9 @@
     }
     const subj = (NE.subjects || []).map(([g, title]) => {
       const ds = DECKS.filter(d => d.grp === g); if (!ds.length) return '';
-      const n = ALL.filter(c => ds.some(d => d.id === c.d)).length;
-      return `<details class="subj"><summary><b>${title}</b> <span class="small muted">${ds.length} 個字庫 · ${n} 張</span></summary>${ds.map(deckRow).join('')}</details>`;
+      const n = ALL.filter(c => ds.some(d => d.id === c.d)).length; const also = subjAlso(g);
+      const alsoRow = also.length ? `<div class="card tight deckrow" data-act="openSubjAlso" data-grp="${g}"><div class="ic">📎</div><div class="grow"><b>其他字庫相關字</b><div class="small muted">${also.length} 個（喺基本／進階字庫學）</div></div><span>›</span></div>` : '';
+      return `<details class="subj"><summary><b>${title}</b> <span class="small muted">${ds.length} 個字庫 · ${n + also.length} 張</span></summary>${ds.map(deckRow).join('')}${alsoRow}</details>`;
     }).join('');
     const groups = (subj ? `<h2>📖 按科目</h2>${subj}` : '') + CATS.filter(([cat]) => TRACKS.nurse.cats.includes(cat)).map(([cat, title]) => {
       const ds = DECKS.filter(d => d.cat === cat && !d.grp);
@@ -695,6 +696,7 @@
       ${starred.length ? `<div class="card tight deckrow" data-act="openStarred" style="--dc-soft:rgba(255,193,7,.2)"><div class="ic">⭐</div><div class="grow"><b>收藏</b><div class="small muted">${starred.length} 個</div></div><span>›</span></div>` : ''}
       ${groups}`;
   };
+  function subjAlso(g) { const ids = new Set((NE.subjAlso || {})[g] || []); return ALL.filter(c => ids.has(c.id)); }
   function deckRow(d) {
     const cs = ALL.filter(c => c.d === d.id);
     const seen = cs.filter(c => S.cards[c.id]).length, mast = cs.filter(c => S.cards[c.id] && S.cards[c.id].i >= 21).length;
@@ -1793,6 +1795,8 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     hideInstall: () => { S.settings.hideInstall = true; save(); render(); },
     detail: el => openModal(detailHtml(BY[el.dataset.id])),
     closeModal: () => closeModal(),
+    openSubjAlso: el => { const g = el.dataset.grp; const t = ((NE.subjects || []).find(s => s[0] === g) || [, ''])[1];
+      openModal(`<h2 style="margin-top:0">📎 ${esc(t)}：其他字庫相關字</h2><p class="small muted">呢啲字喺基本／進階字庫入面，溫習會跟返原本字庫。</p>${cardList(subjAlso(g))}<button class="btn-ghost btn-block" style="margin-top:12px" data-act="closeModal">關閉</button>`); },
     openStarred: () => openModal(`<h2 style="margin-top:0">⭐ 收藏</h2>${cardList(ALL.filter(c => S.stars[c.id]))}<button class="btn-ghost btn-block" style="margin-top:12px" data-act="closeModal">關閉</button>`),
     addWord: () => openModal(wordForm()),
     editWord: el => openModal(wordForm(S.custom.find(c => c.id === el.dataset.id))),

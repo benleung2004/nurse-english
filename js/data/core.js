@@ -1,5 +1,7 @@
 // 所有內容資料嘅共用 helper。每張卡：en 英文、zh 中文、def 英文解釋、ex 例句、exZh 例句中文、note 中文解釋/提示
 window.NE = { decks: [], cards: [], ielts: {} };
+// 護理科目（字庫用 opts.grp 分組；字庫頁按呢個次序顯示）
+NE.subjects = [['paed', '👶 兒科']];
 NE.deck = function (id, name, zh, cat, icon, opts, rows) {
   NE.decks.push(Object.assign({ id, name, zh, cat, icon }, opts));
   rows.forEach(r => NE.cards.push({

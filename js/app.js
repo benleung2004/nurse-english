@@ -673,9 +673,14 @@
       const hits = ALL.filter(c => (fill(c.en) + ' ' + c.zh + ' ' + c.def).toLowerCase().includes(q)).slice(0, 60);
       res = `<div class="card"><div class="small muted">搵到 ${hits.length} 個</div>${cardList(hits)}</div>`;
     }
-    const groups = CATS.filter(([cat]) => TRACKS.nurse.cats.includes(cat)).map(([cat, title]) => {
-      const ds = DECKS.filter(d => d.cat === cat);
-      return `<h2>${title}</h2>` + ds.map(deckRow).join('');
+    const subj = (NE.subjects || []).map(([g, title]) => {
+      const ds = DECKS.filter(d => d.grp === g); if (!ds.length) return '';
+      const n = ALL.filter(c => ds.some(d => d.id === c.d)).length;
+      return `<details class="subj"><summary><b>${title}</b> <span class="small muted">${ds.length} 個字庫 · ${n} 張</span></summary>${ds.map(deckRow).join('')}</details>`;
+    }).join('');
+    const groups = (subj ? `<h2>📖 按科目</h2>${subj}` : '') + CATS.filter(([cat]) => TRACKS.nurse.cats.includes(cat)).map(([cat, title]) => {
+      const ds = DECKS.filter(d => d.cat === cat && !d.grp);
+      return ds.length ? `<h2>${title}</h2>` + ds.map(deckRow).join('') : '';
     }).join('');
     const starred = ALL.filter(c => S.stars[c.id]);
     const nq = [['learned', '⚡', '已學快測'], ['weak', '🎯', '弱項特訓'], ['spell', '⌨️', '串字'], ['listen', '🎧', '聽力'], ['abbr', '🔤', '縮寫挑戰'], ['all', '🎲', '全部隨機']];
@@ -1595,7 +1600,8 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 記住：<b>自己諗、自己講</b>先會記得，淨係睇答案好快會唔記得。<br>
         • 揭咗之後<b>誠實揀</b>：唔記得（今日會再出）／難／記得／好易（會隔耐啲先再出）。<br>
         • 🔊 聽讀音　🎤 跟讀（電腦會評；iPhone 就聽完跟住讀）　🔎 查字典　☆ 收藏　💌 對呢張卡有意見。<br>
-        • 護理新字會自動先出進階字。想揀特定字庫：去「🩺 護理」頁：🔍 臨床評估、🧪 進階程序、⚗️ 藥理、🧬 進階疾病、🛡️ 感染控制、🧓 長者護理，同埋 🏨 病房日常句子、👩‍⚕️ 同同事溝通。入去字庫頁撳「學 10 個」就得。`)}
+        • 護理新字會自動先出進階字。想揀特定字庫：去「🩺 護理」頁：🔍 臨床評估、🧪 進階程序、⚗️ 藥理、🧬 進階疾病、🛡️ 感染控制、🧓 長者護理，同埋 🏨 病房日常句子、👩‍⚕️ 同同事溝通。入去字庫頁撳「學 10 個」就得。<br>
+        • 「📖 按科目」：每個科目（例如 👶 兒科）撳開有幾個字庫，連實用句。`)}
       ${sec('✏️', '測驗', `
         護理測驗喺「🩺 護理」頁；IELTS 測驗喺「🎓 IELTS → 字彙」。有快測、弱項特訓、串字、聽力、縮寫挑戰。<b>答錯嘅字會自動加入今日溫習</b>，所以錯咗唔緊要，錯咗先記得牢。<br>答錯之後要<b>照住打 2 次正確答案</b>（句子 1 次）先去下一題，手打一次記得快好多；趕時間可以撳「略過」。`)}
       ${sec('🎓', 'IELTS 練習', `

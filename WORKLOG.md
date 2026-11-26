@@ -64,3 +64,4 @@
 - 10:24 加入 ielts-models6.js：Part 1／3 參考答案 30→57 個。
 - 10:25 加入 cases10.js：臨床情境題 436→471 題（各科）。
 - 10:27 加入 ielts-models7.js：Part 2 全部 50 題都有參考答案（新寫 16 個，相近題目共用 4 個）。
+- 10:28 加入 ielts-models8.js：範文 29→35 篇（4 篇 Task 2、2 篇 Task 1）。

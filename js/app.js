@@ -588,7 +588,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
   let CHAT_BUSY = false;
   function chatHtml() {
     const M = S.chat.slice(-30); const sug = ['今日應該做咩？', '我邊樣最弱？點改善？', '幫我排到考試嘅溫習計劃', '我想改 app：…'];
-    return `<div class="row between" style="margin-bottom:8px"><b style="font-size:18px">🤖 AI 助手</b><div class="row">${S.chat.length ? '<button class="chip" data-act="chatClear">🗑️ 清除</button>' : ''}<button class="chip" data-act="closeModal">✕</button></div></div>
+    return `<div class="row between" style="margin-bottom:8px"><b style="font-size:18px">🤖 AI 助手</b><div class="row"><button class="chip" data-act="fabFb">💬 寫意見</button>${S.chat.length ? '<button class="chip" data-act="chatClear">🗑️ 清除</button>' : ''}<button class="chip" data-act="closeModal">✕</button></div></div>
       <div id="chatLog" class="chatlog">${M.length ? M.map((m, i) => m.role === 'user' ? `<div class="bub me">${esc(m.content)}</div>`
         : `<div class="bub ai">${mdHtml(m.content || '')}${(m.actions || []).map((a, j) => `<button class="chip ${a.done ? '' : 'on'}" style="margin:4px 4px 0 0" ${a.done ? 'disabled' : `data-act="chatDo" data-i="${S.chat.length - M.length + i}" data-j="${j}"`}>${a.done ? '✔ ' : '✅ '}${esc(a.label || a.type)}</button>`).join('')}</div>`).join('')
         : `<p class="small muted">問我任何嘢：溫習計劃、進度、弱項、app 點用；想改設定或者改 app 都可以同我講。</p><div class="row">${sug.map(x => `<button class="chip" data-act="chatSug" data-t="${esc(x)}">${esc(x)}</button>`).join('')}</div>`}
@@ -596,7 +596,8 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
       <div class="row" style="flex-wrap:nowrap;margin-top:8px"><textarea id="chatIn" rows="2" placeholder="打你想問嘅嘢…" class="grow"></textarea><button class="btn-primary" data-act="chatSend" ${CHAT_BUSY ? 'disabled' : ''}>➤</button></div>
       <p class="small muted" style="margin-top:4px">${AIC.dsKey ? '用 DeepSeek' : 'Qwen'} · 對話會儲存同同步</p>`;
   }
-  function chatOpen() { if (!aiReady()) return openModal(`<h2 style="margin-top:0">🤖 AI 助手</h2><p>要先設定 AI key 先用到。</p><p class="small muted">設定 → 🤖 AI 評分：貼 Qwen key（或者 DeepSeek key），撳「儲存並測試」。</p><div class="grid2"><button class="btn-ghost" data-act="closeModal">遲啲</button><a class="btn btn-primary" href="#settings" data-act="closeModal">去設定</a></div>`); openModal(chatHtml()); const l = $('#chatLog'); if (l) l.scrollTop = l.scrollHeight; }
+  function chatOpen() { if (!aiReady()) return openModal(`<h2 style="margin-top:0">🤖 AI 助手</h2><p>要先設定 AI key 先用到。</p><p class="small muted">設定 → 🤖 AI 評分：貼 Qwen key（或者 DeepSeek key），撳「儲存並測試」。</p><div class="grid2"><button class="btn-ghost" data-act="closeModal">遲啲</button><a class="btn btn-primary" href="#settings" data-act="closeModal">去設定</a></div>
+      <button class="btn-ghost btn-block" style="margin-top:10px" data-act="fabFb">💬 唔使 AI，直接寫意見俾 Ben</button>`); openModal(chatHtml()); const l = $('#chatLog'); if (l) l.scrollTop = l.scrollHeight; }
   function chatRefresh() { if ($('#modal').classList.contains('hidden') || !$('#chatLog')) return; const keep = ($('#chatIn') || {}).value || ''; $('#sheet').innerHTML = chatHtml(); const l = $('#chatLog'); if (l) l.scrollTop = l.scrollHeight; const t = $('#chatIn'); if (t) t.value = keep; }
   async function chatSend(text) {
     text = (text || '').trim(); if (!text || CHAT_BUSY) return;
@@ -633,8 +634,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     a.done = true; save(); chatRefresh(); render();
   }
   function chatFab() {
-    if (!$('#fbFab')) { const f = document.createElement('button'); f.id = 'fbFab'; f.className = 'fbfab no-print'; f.setAttribute('aria-label', '寫意見'); f.dataset.act = 'fabFb'; f.textContent = '💬'; document.body.appendChild(f); }
-    if ($('#aiFab')) return; const b = document.createElement('button'); b.id = 'aiFab'; b.className = 'aifab no-print'; b.setAttribute('aria-label', 'AI 助手'); b.dataset.act = 'chatOpen'; b.textContent = '🤖'; document.body.appendChild(b);
+    if ($('#aiFab')) return; const b = document.createElement('button'); b.id = 'aiFab'; b.className = 'aifab no-print'; b.setAttribute('aria-label', 'AI 助手同寫意見'); b.dataset.act = 'chatOpen'; b.textContent = '🤖'; document.body.appendChild(b);
   }
 
   // ===== 🩺 臨床情境題：好似護士考試，4 揀 1，答完有解釋 =====
@@ -758,6 +758,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     </div>
     ${trackCard('nurse', TN)}
     ${trackCard('ielts', TI)}
+    <details class="subj"><summary><b>📅 今日一字 · ⚡ 捷徑</b></summary>
     ${w ? `<div class="card wotd">
       <div class="row between"><span class="pill" style="background:var(--grad-warm);color:#fff">📅 今日一字</span><span class="small muted">${esc(deckOf(w).icon)} ${esc(deckOf(w).zh)}</span></div>
       <div class="row" style="margin-top:8px"><div class="grow"><div style="font-size:24px;font-weight:800">${esc(w.en)}</div><div style="color:${color(w.d)};font-weight:700">${esc(w.zh)}</div></div>${spk(speakText(w))}</div>
@@ -771,6 +772,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
       <a class="btn action" href="#ielts"><span class="ico c-purple">🎤</span>IELTS</a>
       <button class="action" data-act="addWord"><span class="ico c-orange">＋</span>加生字</button>
     </div>
+    </details>
     <div style="height:12px"></div>
     ${coachCard()}
     <a class="card tight deckrow" href="#feedback" style="color:inherit;text-decoration:none;--dc-soft:rgba(255,107,154,.16)"><div class="ic">💌</div>
@@ -1303,10 +1305,6 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     .replace(/(\d)\.(\d)/g, '$1:$2').replace(/(\d)\s*(am|pm|a\.m\.|p\.m\.)/g, '$1').replace(/(\d)(st|nd|rd|th)\b/g, '$1')
     .replace(/\b(the|of|dr|doctor)\b/g, ' ').replace(/[^a-z0-9: ]/g, ' ').replace(/\s+/g, ' ').trim();
   const ansOk = (v, list) => { const a = normAns(v); if (!a) return false; return list.some(x => { const b = normAns(x); return a === b || a.replace(/ /g, '') === b.replace(/ /g, ''); }); };
-  function bandFor(kind, ok, total) {
-    const raw = Math.round(ok / total * 40);
-    return (NE.bandTable[kind].find(([min]) => raw >= min) || [0, 3.5])[1];
-  }
   const lastScore = (k, id) => { const e = S.events.filter(x => x.k === k && x.id === id).pop(); return e ? `${e.sc}/${e.n}` : ''; };
   const TF = { T: 'True', F: 'False', NG: 'Not Given' };
 
@@ -1327,7 +1325,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     const n = P.qs.length;
     return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#ielts" data-act="goIelts" data-tab="read">‹</a><h1 class="grow" style="font-size:20px">📖 ${esc(P.title)}</h1></div>
       <p class="small muted">${esc(P.zh)} · 建議 ${P.mins} 分鐘 · 先睇題目再搵答案</p>
-      ${res ? `<div class="card hero center"><div class="score">${RD.score}/${n}</div><p>按比例估算約 <b>Band ${bandFor('reading', RD.score, n)}</b>（題目少，只供參考）</p></div>` : `<div class="card center tight"><div class="row between"><span class="small muted" id="timerLabel">${P.mins} 分鐘計時</span><span class="timer" id="timerDisp" style="font-size:26px">${P.mins}:00</span><button class="chip" data-act="tgo" data-s="${P.mins * 60}">⏱️ 開始</button></div></div>`}
+      ${res ? `<div class="card hero center"><div class="score">${RD.score}/${n}</div><p>答啱 ${RD.score} 題</p><p class="small muted">一篇得 ${n} 題估唔到 Band；要做完整份 40 題（官方練習卷）先估得準。</p></div>` : `<div class="card center tight"><div class="row between"><span class="small muted" id="timerLabel">${P.mins} 分鐘計時</span><span class="timer" id="timerDisp" style="font-size:26px">${P.mins}:00</span><button class="chip" data-act="tgo" data-s="${P.mins * 60}">⏱️ 開始</button></div></div>`}
       <div class="card">${P.paras.map((p, i) => `<p><b style="color:var(--primary2)">${'ABCDEFG'[i]}</b>　${esc(p)}</p>`).join('')}</div>
       <div class="card"><h3>Questions</h3>
         <details class="small"><summary>💡 True / False / Not Given 點分？</summary>
@@ -1343,7 +1341,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     const n = P.qs.length;
     return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#ielts" data-act="goIelts" data-tab="listen">‹</a><h1 class="grow" style="font-size:20px">🎧 ${esc(P.title)}</h1></div>
       <p class="small muted">${esc(P.zh)} · ${esc(P.part)} · 開始前先睇晒題目，估下要填咩（名？數字？時間？）</p>
-      ${LS.done ? `<div class="card hero center"><div class="score">${LS.score}/${n}</div><p>按比例估算約 <b>Band ${bandFor('listening', LS.score, n)}</b>（只供參考）</p></div>` : ''}
+      ${LS.done ? `<div class="card hero center"><div class="score">${LS.score}/${n}</div><p>答啱 ${LS.score} 題</p><p class="small muted">一段得 ${n} 題估唔到 Band；要做完整份 40 題（官方練習卷）先估得準。呢度用手機內置聲音，同真考試錄音唔同，記得都要做官方聽力卷。</p></div>` : ''}
       <div class="card center">
         <div class="grid2"><button class="btn-primary btn-big" data-act="lsPlay" id="lsPlayBtn">▶️ 播放</button><button class="btn-ghost btn-big" data-act="lsStop">⏹️ 停</button></div></div>
       <div class="card"><h3>填寫答案（ONE WORD AND/OR A NUMBER）</h3>
@@ -2028,7 +2026,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
         • 📘 <b>字彙</b>：健康話題字、學術詞彙、常用搭配，同埋 <b>Band 7 程度</b>：🎙️ 口語高分表達、🖋️ 寫作高分句型、🌏 話題字彙（教育、環境、科技、工作、城市、罪案、文化）。真考試唔止考健康，所以每個話題都要識。<br>
         • 💡 <b>貼士</b>：評分準則、溫習方法、官方免費練習連結。<br>
         • 口語、寫作題目包括教育、環境、科技、工作、城市等常考話題。<br>
-        估分只係按比例估算，題目少，只供參考。題目係按 IELTS 官方題型原創，唔係真題。`)}
+        閱讀同聽力每篇題目少，所以只顯示答啱幾多題，唔估 Band；想知 Band 要做完整份官方練習卷。題目係按 IELTS 官方題型原創，唔係真題。`)}
       ${sec('🩺', '護理英文 同 🎓 IELTS：兩條線分開', `
         • 首頁有兩張卡：<b>🩺 護理英文</b>（工作用：醫護字、病房句子、同同事溝通）同 <b>🎓 IELTS</b>（考試用：字彙、口語、寫作、閱讀、聽力）。各自有「開始字卡」，溫習同新字分開計。<br>
         • 下面 tab：「🩺 護理」= 醫護字庫同測驗；「🎓 IELTS」= 所有 IELTS 練習，IELTS 字卡同測驗喺「字彙」。<br>
@@ -2129,7 +2127,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
   }
   let lastRoute = '';
   function after(route) {
-    chatFab(); const fab = $('#aiFab'), fb = $('#fbFab'), hideFab = ['study', 'quizrun', 'mock', 'write'].includes(route); if (fab) fab.style.display = hideFab ? 'none' : ''; if (fb) fb.style.display = hideFab || route === 'feedback' ? 'none' : '';
+    chatFab(); const fab = $('#aiFab'); if (fab) fab.style.display = !['study', 'quizrun', 'mock', 'write'].includes(route) ? '' : 'none';
     if (route === 'coach') loadClaudeList();
     if (route === 'creport') { const a = (location.hash.split('/')[1] || ''); loadClaudeReport(decodeURIComponent(a)); }
     if (route === 'home' && !updPopped && hasNewUpdate()) { updPopped = true; setTimeout(() => { if (location.hash === '' || location.hash === '#home') { showUpdates(); render(); } }, 700); }

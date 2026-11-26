@@ -575,13 +575,13 @@ Return JSON: {"band": overall band = average of the 4 criteria rounded to neares
   const CHAT_SYS = () => `You are the friendly AI helper inside the "護士英文 Nurse English" phone app. The user is a 23-year-old Hong Kong enrolled nurse (paediatrics) preparing for IELTS (and a future nursing degree). Reply in Hong Kong Traditional Chinese (Cantonese style, 繁體字 only), short and practical; English for examples.
 APP FEATURES (routes): 今日 #home (今日任務, 備考路線圖 #plan); 🩺 護理 #library (15 nursing subjects grouped 按科目, quizzes: learned/weak/spell/listen/abbr/all); 🎓 IELTS #ielts (tabs: speak, write, read, listen, gram, para, vocab with 10 topic decks; 🎙️ AI 模擬口試 #mock; 📈 AI 報告 #reports); 📈 進度 #stats (學習報告 #coach); 設定 #settings; 使用說明 #help.
 DATA ABOUT HER (JSON): ${chatContext()}
-You can suggest actions; the app shows each as a button she must confirm. Allowed actions:
+You can suggest actions; the app shows each as a button she must confirm (except "feedback", which is saved automatically). Allowed actions:
 - {"type":"setSetting","key":one of ${Object.keys(CHAT_SET).join('/')},"value":"...","label":"Chinese button text"}
 - {"type":"addWord","en":"...","zh":"...","def":"short English definition","ex":"example sentence","label":"..."}
 - {"type":"go","route":"#...","label":"..."}
 - {"type":"quiz","kind":"learned|weak|spell|listen|all","track":"nurse|ielts","label":"..."}
-- {"type":"request","text":"clear description of the app change she wants, for the developer","label":"..."}
-You cannot change app code yourself: for new features, content changes or bugs, use a "request" action (Ben's developer AI will do it later). Never invent data; use the JSON above. Use at most 3 actions.
+- {"type":"feedback","cat":"bug|hard|easy|want|other","text":"her comment rewritten clearly in Chinese with all details (which page/card/word, what is wrong, what she wants)","label":"已記低意見"}
+You cannot change app code yourself. Whenever she gives ANY comment, complaint, suggestion, error report, or says something is too hard/easy or wants a new feature or content change, ALWAYS include one "feedback" action (cat: bug = error/typo/not working, hard = too difficult, easy = too easy, want = new feature or content, other = anything else). It is saved automatically for Ben's developer (Claude) to review later, so tell her it has been recorded. Never invent data; use the JSON above. Use at most 3 actions.
 Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "actions": []}`;
   let CHAT_BUSY = false;
   function chatHtml() {
@@ -604,7 +604,11 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
       const hist = S.chat.slice(-12).map(m => ({ role: m.role, content: m.role === 'assistant' ? JSON.stringify({ reply: m.content, actions: m.actions || [] }) : m.content }));
       const res = AIC.dsKey ? await deepseekCall([{ role: 'system', content: CHAT_SYS() }].concat(hist), 'chat')
         : await aiCall(CHAT_SYS() + '\n\nCONVERSATION:\n' + hist.map(m => m.role + ': ' + m.content).join('\n'), 'chat');
-      const acts = (Array.isArray(res.actions) ? res.actions : []).filter(a => a && ['setSetting', 'addWord', 'go', 'quiz', 'request'].includes(a.type)).slice(0, 3);
+      const acts = (Array.isArray(res.actions) ? res.actions : []).filter(a => a && ['setSetting', 'addWord', 'go', 'quiz', 'request', 'feedback'].includes(a.type)).slice(0, 3);
+      acts.forEach(a => { if (a.type !== 'feedback' && a.type !== 'request') return; const k = FB_CATS.some(x => x[0] === a.cat) ? a.cat : (a.type === 'request' ? 'want' : 'other');
+        S.feedback.push({ id: 'fb' + Date.now() + Math.random().toString(36).slice(2, 5), t: Date.now(), cat: k, src: 'ai', text: String(a.text || text).slice(0, 1000), said: text.slice(0, 1000), ctx: '', route: 'assistant' });
+        a.type = 'feedback'; a.label = '📝 已記低意見'; a.done = true; });
+      if (acts.some(a => a.type === 'feedback') && syncReady()) setTimeout(() => syncNow(false), 500);
       S.chat.push({ role: 'assistant', content: String(res.reply || '（冇回覆）'), actions: acts, t: Date.now() });
       logEv({ k: 'chat', q: text.slice(0, 300), a: String(res.reply || '').slice(0, 600) });
     } catch (e) { S.chat.push({ role: 'assistant', content: '⚠️ ' + e.message, t: Date.now() }); }
@@ -627,6 +631,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     a.done = true; save(); chatRefresh(); render();
   }
   function chatFab() {
+    if (!$('#fbFab')) { const f = document.createElement('button'); f.id = 'fbFab'; f.className = 'fbfab no-print'; f.setAttribute('aria-label', '寫意見'); f.dataset.act = 'fabFb'; f.textContent = '💬'; document.body.appendChild(f); }
     if ($('#aiFab')) return; const b = document.createElement('button'); b.id = 'aiFab'; b.className = 'aifab no-print'; b.setAttribute('aria-label', 'AI 助手'); b.dataset.act = 'chatOpen'; b.textContent = '🤖'; document.body.appendChild(b);
   }
 
@@ -2067,7 +2072,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       <h2>我寫過嘅意見</h2>
       ${list.length ? list.map(f => {
         const c = f.ctx && BY[f.ctx]; const cat = FB_CATS.find(x => x[0] === f.cat); const rep = R[f.id];
-        return `<div class="card tight"><div class="row between"><span class="pill">${esc(cat ? cat[1] : f.cat)}</span><span class="small muted">${esc(new Date(f.t).toLocaleDateString('zh-HK'))}</span></div>
+        return `<div class="card tight"><div class="row between"><span class="pill">${esc(cat ? cat[1] : f.cat)}${f.src === 'ai' ? ' · 🤖 經 AI' : ''}</span><span class="small muted">${esc(new Date(f.t).toLocaleDateString('zh-HK'))}</span></div>
           ${c ? `<div class="small muted" style="margin-top:6px">關於：${esc(fill(c.en))}</div>` : ''}
           <p>${esc(f.text)}</p>
           ${rep ? `<div class="note">💬 回覆：${esc(rep)}</div>` : '<div class="small muted">⏳ 等緊處理</div>'}</div>`;
@@ -2116,7 +2121,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
   }
   let lastRoute = '';
   function after(route) {
-    chatFab(); const fab = $('#aiFab'); if (fab) fab.style.display = !['study', 'quizrun', 'mock', 'write'].includes(route) ? '' : 'none';
+    chatFab(); const fab = $('#aiFab'), fb = $('#fbFab'), hideFab = ['study', 'quizrun', 'mock', 'write'].includes(route); if (fab) fab.style.display = hideFab ? 'none' : ''; if (fb) fb.style.display = hideFab || route === 'feedback' ? 'none' : '';
     if (route === 'coach') loadClaudeList();
     if (route === 'creport') { const a = (location.hash.split('/')[1] || ''); loadClaudeReport(decodeURIComponent(a)); }
     if (route === 'home' && !updPopped && hasNewUpdate()) { updPopped = true; setTimeout(() => { if (location.hash === '' || location.hash === '#home') { showUpdates(); render(); } }, 700); }
@@ -2307,6 +2312,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       PP = { i: (PP.i + 1) % NE.paraphrase.length, shown: false }; render(); toast(el.dataset.v === '1' ? '👍 好！下一句' : '💪 繼續練');
     },
     openFb: el => openModal(feedbackForm(el.dataset.ctx || '')),
+    fabFb: () => openModal(feedbackForm('')),
     fbCat: el => { el.parentElement.querySelectorAll('.chip').forEach(b => b.classList.toggle('on', b === el)); },
     fbSend: el => {
       const box = el.closest('.sheet, .card') || document; const ta = box.querySelector('#fbText');

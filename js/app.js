@@ -838,8 +838,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     const grades = SES.revealed ? `<div class="grades">
       ${[['唔記得', 0], ['難', 1], ['記得', 2], ['好易', 3]].map(([t, g]) => `<button class="g${g}" data-act="grade" data-g="${g}">${t}<small>${ivLabel(nextState(prev, g).i)}</small></button>`).join('')}
       </div>` : (dk.say ? `<button class="btn-primary btn-big btn-block" data-act="reveal">睇答案 👀</button>`
-        : `<button class="btn-ghost btn-block" data-act="reveal">唔識，直接睇答案 👀</button>`)
-        + `<button class="btn-ghost btn-block" style="margin-top:8px" data-act="skipKnown">⏭ 已識，跳過（${ivLabel(skipState(prev).i)}後先再溫）</button>`;
+        : `<button class="btn-ghost btn-block" data-act="reveal">唔識，直接睇答案 👀</button>`);
     const anim = SES.anim; SES.anim = '';
     return `
     <div class="row" style="flex-wrap:nowrap;margin-bottom:12px">
@@ -852,7 +851,8 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
       ${front}${back}${extra}
     </div>
     ${grades}
-    ${SES.revealed ? '<p class="small muted center">誠實揀：唔記得嘅字今日會再出現，記得嘅會隔幾日再溫</p>' : ''}`;
+    ${SES.revealed ? `<p class="small muted center">誠實揀：唔記得嘅字今日會再出現，記得嘅會隔幾日再溫</p>
+      <button class="btn-ghost btn-block" style="margin-top:4px" data-act="skipKnown">⏭ 已識，跳過（${ivLabel(skipState(prev).i)}後先再溫）</button>` : ''}`;
   };
   function sentHtml(c, dk, isNew) {
     if (dk.say || dk.roots || dk.abbr || !aiReady()) return '';

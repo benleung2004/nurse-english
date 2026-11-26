@@ -1,6 +1,13 @@
 // 🔔 App 更新通知（最新放最頂）。每次改 app 都加一條，id 用日期；佢未睇過就會有紅點同自動彈出
 NE.updates = [
   {
+    id: '2026-11-26-topics6', title: '📚 IELTS 話題字彙擴充（金錢、時裝、娛樂、性格、歷史、交通）',
+    items: [
+      '六個字最少嘅 IELTS 話題各加一個新字庫，共 58 張新卡',
+      '例如：tighten one\'s belt、cashless society、beauty standards、plot twist、thought-provoking、calm under pressure、burnt out、revitalise、heritage site、electric vehicle、pedestrian zone',
+    ]
+  },
+  {
     id: '2026-11-26-cases17', title: '🩺 情境題增至 663 題（兒科 150 題）',
     items: [
       '兒科：BB 原因不明發燒驗尿、胸腔引流甩出、嘔咗抗生素、每日磅重原因、長期住院後返學、血氧探頭警號、唐氏綜合症、哮喘行動計劃、唔肯食苦藥、新生兒敗血症',

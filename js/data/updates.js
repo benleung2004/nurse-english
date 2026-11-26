@@ -1,6 +1,12 @@
 // 🔔 App 更新通知（最新放最頂）。每次改 app 都加一條，id 用日期；佢未睇過就會有紅點同自動彈出
 NE.updates = [
   {
+    id: '2026-11-26-gram5', title: '🧩 文法增至 209 題',
+    items: [
+      '補返較少嘅類別：情態動詞（should have / can\'t have / needn\'t）、比較級（fewer vs less、twice as…as、The more…the more）、條件句（零條件、混合、倒裝）、被動（must be checked、have sth done）、連接詞、句子結構（強調句、Only after 倒裝）',
+    ]
+  },
+  {
     id: '2026-11-26-topics6', title: '📚 IELTS 話題字彙擴充（金錢、時裝、娛樂、性格、歷史、交通）',
     items: [
       '六個字最少嘅 IELTS 話題各加一個新字庫，共 58 張新卡；另外大自然、旅遊、藝術、語言、飲食、家庭再加 29 張進階字',

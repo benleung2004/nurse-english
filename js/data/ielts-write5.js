@@ -55,7 +55,7 @@ In 2020, applicants scored an average of 6.5 in listening and 6.0 in reading. Th
 
 By 2025, listening had risen to 7.0, and reading and writing had both increased by half a band, to 6.5 and 6.0 respectively. The most significant improvement was in speaking, which rose by a full band to 6.5, bringing it level with reading.
 
-As a result, writing was the only skill in which the average score remained at 6.0, suggesting that this area may need further attention in training.`);
+As a result, writing was the only skill in which the average score remained at 6.0, suggesting that this area may need further attention in training, for example through more practice with academic essay structure.`);
 
   Pr('t1-wastewater', 'The steps below show how wastewater is treated before being released into the sea. Summarise the information by selecting and reporting the main features.',
     ['Wastewater collected from homes and hospitals', 'Screening removes large objects', 'Grit chamber removes sand and stones', 'Primary settlement tank: solids sink as sludge', 'Biological treatment: bacteria break down organic matter', 'Final settlement tank', 'Disinfection with UV light', 'Treated water released into the sea; sludge processed separately'],

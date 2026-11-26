@@ -1,6 +1,13 @@
 // 🔔 App 更新通知（最新放最頂）。每次改 app 都加一條，id 用日期；佢未睇過就會有紅點同自動彈出
 NE.updates = [
   {
+    id: '2026-11-26-prac13', title: '📖🎧 閱讀、聽力各增至 32',
+    items: [
+      '閱讀：手術安全清單、城市耕種、屏幕同兒童睡眠',
+      '聽力：報名兒童慈善義工、新生 BB 出院講解、兒童同意權講座',
+    ]
+  },
+  {
     id: '2026-11-26-gram4', title: '🧩 文法增至 173 題、改寫 69 句',
     items: [
       '新文法題全部用醫護情境：時態（過去進行、將來完成）、One of…、since / for、suffer from、被動進行式、where / when 關係子句、must / don\'t have to、Hardly…when 倒裝',

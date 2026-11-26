@@ -1,6 +1,16 @@
 // 🔔 App 更新通知（最新放最頂）。每次改 app 都加一條，id 用日期；佢未睇過就會有紅點同自動彈出
 NE.updates = [
   {
+    id: '2026-11-26-talk3', title: '💬 實用句子加 92 句（兒科為主）',
+    items: [
+      '疼痛評估 12 → 34 句：笑臉量表、FLACC、PCA、麻醉膏、止痛後再評估、鴉片類副作用',
+      '家屬與安慰 10 → 31 句：同家長合作、處理嬲同擔心、傳譯、家庭會議、離世後',
+      '交更與報告 16 → 32 句：兒科交更（體重、PEWS、出入量、插針位、保護兒童）',
+      '電話溝通 15 → 32 句：緊急上報、危急結果、數字確認（fifteen / fifty）、出院後電話跟進',
+      '同同事溝通 30 句、同病人溝通 32 句：叫停核對、執業範圍、搶救分工、介紹自己同核對身份'
+    ]
+  },
+  {
     id: '2026-11-26-prac23', title: '🧩 文法 229 題、🔁 改寫 95 句',
     items: [
       '新文法：the elderly、the number of / a number of、fewer vs less、a piece of advice、Neither of… has、Task 1 常用（rise from…to、increase by、is expected to）、Not until 倒裝',

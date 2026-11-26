@@ -200,6 +200,8 @@
     s.due = addDays(today(), s.i); s.last = today();
     return s;
   }
+  // 「已識，跳過」：當好易處理，但最少隔 5 日先再出
+  function skipState(prev) { const s = nextState(prev, 3); if (s.i < 5) { s.i = 5; s.due = addDays(today(), 5); } return s; }
   function ivLabel(i) { return i === 0 ? '再嚟' : i < 30 ? i + '日' : Math.round(i / 30) + '個月'; }
 
   function dueCount(deck, track) {
@@ -683,11 +685,11 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     SES = { queue: q, i: 0, revealed: false, showZh: false, hint: false, seen: new Set(), good: 0, again: 0, anim: 'enter', track: (opts && opts.track) || (opts && opts.deck ? trackOfDeck(opts.deck) : 'nurse') };
     location.hash = '#study';
   }
-  function grade(g) {
+  function grade(g, skip) {
     stopCardRec();
     const id = SES.queue[SES.i]; const prev = S.cards[id];
-    S.cards[id] = nextState(prev, g);
-    logEv({ k: 'study', id, g, nw: prev ? 0 : 1, ms: Date.now() - (SES.shownAt || Date.now()) });
+    S.cards[id] = skip ? skipState(prev) : nextState(prev, g);
+    logEv(Object.assign({ k: 'study', id, g, nw: prev ? 0 : 1, ms: Date.now() - (SES.shownAt || Date.now()) }, skip ? { skip: 1 } : {}));
     const L = logToday();
     if (!SES.seen.has(id)) { SES.seen.add(id); if (!prev) { L.n++; if (trackOf(BY[id]) === 'ielts') L.ni = (L.ni || 0) + 1; } else L.r++; }
     if (g === 0) { SES.again++; SES.queue.splice(Math.min(SES.i + 4, SES.queue.length), 0, id); } else SES.good++;
@@ -835,8 +837,9 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
       ${sentHtml(c, dk, isNew)}` : '';
     const grades = SES.revealed ? `<div class="grades">
       ${[['唔記得', 0], ['難', 1], ['記得', 2], ['好易', 3]].map(([t, g]) => `<button class="g${g}" data-act="grade" data-g="${g}">${t}<small>${ivLabel(nextState(prev, g).i)}</small></button>`).join('')}
-      </div>` : dk.say ? `<button class="btn-primary btn-big btn-block" data-act="reveal">睇答案 👀</button>`
-        : `<button class="btn-ghost btn-block" data-act="reveal">唔識，直接睇答案 👀</button>`;
+      </div>` : (dk.say ? `<button class="btn-primary btn-big btn-block" data-act="reveal">睇答案 👀</button>`
+        : `<button class="btn-ghost btn-block" data-act="reveal">唔識，直接睇答案 👀</button>`)
+        + `<button class="btn-ghost btn-block" style="margin-top:8px" data-act="skipKnown">⏭ 已識，跳過（${ivLabel(skipState(prev).i)}後先再溫）</button>`;
     const anim = SES.anim; SES.anim = '';
     return `
     <div class="row" style="flex-wrap:nowrap;margin-bottom:12px">
@@ -2209,6 +2212,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     aiSay: el => { const c = BY[el.dataset.id]; runAI('say', { ctx: c.def, zh: fill(c.zh), model: fill(c.en), text: SES.rec.v }, 'aiSayBox', c.id); },
     showZh: () => { SES.showZh = true; render(); },
     grade: el => grade(Number(el.dataset.g)),
+    skipKnown: () => grade(3, true),
     exitStudy: () => { SES = null; location.hash = '#home'; },
     star: el => { const id = el.dataset.id; if (S.stars[id]) delete S.stars[id]; else S.stars[id] = 1; save(); el.textContent = S.stars[id] ? '⭐ 已收藏' : '☆ 收藏'; el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 400); },
     detail: el => openModal(detailHtml(BY[el.dataset.id])),

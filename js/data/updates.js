@@ -1,6 +1,13 @@
 // 🔔 App 更新通知（最新放最頂）。每次改 app 都加一條，id 用日期；佢未睇過就會有紅點同自動彈出
 NE.updates = [
   {
+    id: '2026-11-26-gram4', title: '🧩 文法增至 173 題、改寫 69 句',
+    items: [
+      '新文法題全部用醫護情境：時態（過去進行、將來完成）、One of…、since / for、suffer from、被動進行式、where / when 關係子句、must / don\'t have to、Hardly…when 倒裝',
+      '新改寫句：a shortage of、hand hygiene、life expectancy、adverse effects、intake、lead to / result in',
+    ]
+  },
+  {
     id: '2026-11-26-cases14', title: '🩺 情境題增至 583 題',
     items: [
       '各科新題：肺栓塞、STEMI、心動過緩、胰臟炎、迴腸造口高輸出、腹膜透析腹膜炎、柏金遜藥物準時、蜘蛛網膜下腔出血、甲狀腺風暴、脊髓受壓、胎動減少、自殺評估、戒酒、鴉片類過量、肺結核口罩、"U" 縮寫風險、長者跌倒後處理',

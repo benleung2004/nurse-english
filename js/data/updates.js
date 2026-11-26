@@ -1,6 +1,13 @@
 // 🔔 App 更新通知（最新放最頂）。每次改 app 都加一條，id 用日期；佢未睇過就會有紅點同自動彈出
 NE.updates = [
   {
+    id: '2026-11-26-cases18', title: '🩺 情境題增至 694 題',
+    items: [
+      '補題目較少嘅科目：耳鼻喉眼（結膜炎、突然失明、耳插管）、解剖生理、護理程序（量血壓手臂位置、拔尿喉、無菌換症、嬰兒呼吸數一分鐘）、學位預備（p 值、主題 vs 變項）',
+      '營養、社區、化驗（尿試紙、乳酸、血糖機 HI）、記錄、手術期（麻醉後譫妄）、老人科、骨科、腫瘤、皮膚（頭蝨）',
+    ]
+  },
+  {
     id: '2026-11-26-gram5', title: '🧩 文法增至 209 題',
     items: [
       '補返較少嘅類別：情態動詞（should have / can\'t have / needn\'t）、比較級（fewer vs less、twice as…as、The more…the more）、條件句（零條件、混合、倒裝）、被動（must be checked、have sth done）、連接詞、句子結構（強調句、Only after 倒裝）',

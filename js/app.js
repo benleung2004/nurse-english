@@ -20,20 +20,6 @@
     'ielts-speak7': '#be185d', 'ielts-write7': '#4f46e5', 'ielts-topics': '#059669'
   };
   const CATS = [['medical', '🩺 醫護字彙'], ['talk', '💬 實用句子（中→英）'], ['ielts', '🎓 IELTS'], ['mine', '⭐ 我的生字']];
-  const QUOTES = [
-    ['Small steps every day lead to big results.', '每天一小步，累積成大進步。'],
-    ['You take care of patients every day. Today, take care of your English too.', '你每日照顧病人，今日都照顧下自己嘅英文。'],
-    ['Mistakes are proof that you are trying.', '犯錯證明你正在努力。'],
-    ['Progress, not perfection.', '追求進步，唔使完美。'],
-    ['Fifteen minutes a day is enough to change your future.', '每日十五分鐘，足以改變將來。'],
-    ['Every word you learn helps a patient feel understood.', '你學識嘅每個字，都令病人更被明白。'],
-    ['You are braver than you think.', '你比自己想像中更勇敢。'],
-    ['Consistency beats intensity.', '持之以恆勝過一時拼搏。'],
-    ['Your future self will thank you.', '將來嘅你會多謝今日嘅自己。'],
-    ['Learning English is a marathon, not a sprint.', '學英文係馬拉松，唔係短跑。'],
-    ['A little progress each day adds up to big results.', '每日少少進步，加埋就係大成果。'],
-    ['I am proud of you. Keep going! ❤️', '我為你驕傲，繼續加油！❤️']
-  ];
 
   // ===== 資料儲存（只存喺手機 localStorage） =====
   const KEY = 'nurse-english-v1';
@@ -658,7 +644,6 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     const C = NE.cases || []; const st = caseStats(); const done = Object.keys(st).filter(id => C.some(c => c.id === id)).length; const wrong = C.filter(c => st[c.id] === 0).length;
     const grps = [...new Set(C.map(c => c.grp))]; const name = g => ((NE.subjects || []).find(x => x[0] === g) || [, g])[1];
     return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#library">‹</a><h1 class="grow">🩺 臨床情境題</h1></div>
-      <p class="small muted">好似護士考試咁：睇臨床情況，揀最啱嘅護理行動。答完有中文解釋，訓練臨床判斷同專業英文。</p>
       <div class="card"><div class="row between"><b>總共 ${C.length} 題</b><span class="small muted">做過 ${done} · 錯咗 ${wrong}</span></div>
         <div class="grid3" style="margin-top:10px;gap:8px">
           <button class="btn-primary" data-act="casesGo" data-mode="all">🎲 隨機 10 題</button>
@@ -713,14 +698,13 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
   function showUpdates() {
     const U = NE.updates || [];
     const seenAt = U.findIndex(u => u.id === S.settings.seenUpdate); const fresh = seenAt < 0 ? U.slice(0, 8) : U.slice(0, seenAt);
-    const shown = fresh.length ? fresh : U.slice(0, 3); const rest = U.filter(u => !shown.includes(u));
-    const card = (u, hl) => `<div class="card tight" style="margin-top:10px;${hl ? 'border-left:5px solid var(--accent)' : ''}"><div class="row between"><b>${esc(u.title)}</b><span class="small muted">${esc(u.id.slice(0, 10))}</span></div>
-        ${u.items.map(x => `<p class="small" style="margin:6px 0">• ${esc(x)}</p>`).join('')}</div>`;
+    const shown = U.slice(0, Math.min(5, Math.max(3, fresh.length))); const rest = U.filter(u => !shown.includes(u));
+    const card = (u, hl) => `<details class="card tight" style="margin-top:10px;${hl ? 'border-left:5px solid var(--accent)' : ''}"><summary style="cursor:pointer"><b>${esc(u.title)}</b> <span class="small muted">${esc(u.id.slice(5, 10))}</span>${hl ? ' <span class="pill new">新</span>' : ''}</summary>
+        ${u.items.map(x => `<p class="small" style="margin:6px 0">• ${esc(x)}</p>`).join('')}</details>`;
     openModal(`<div class="row between"><h2 style="margin:0">🔔 App 更新</h2><button class="icon-btn" data-act="closeModal">✕</button></div>
       ${fresh.length ? `<p class="small muted" style="margin:6px 0 0">有 ${fresh.length} 個新更新</p>` : ''}
-      ${shown.map((u, i) => card(u, i === 0)).join('')}
-      ${rest.length ? `<details style="margin-top:10px"><summary class="small">之前嘅更新（${rest.length}）</summary>${rest.map(u => card(u, false)).join('')}</details>` : ''}
-      <p class="small muted">有咩想改，用首頁「💌 意見箱」話俾 Ben 知。</p>
+      ${shown.map(u => card(u, fresh.includes(u))).join('')}
+      ${rest.length ? `<details style="margin-top:10px"><summary class="small">之前嘅更新（${rest.length}）</summary>${rest.map(u => card(u, fresh.includes(u))).join('')}</details>` : ''}
       <button class="btn-primary btn-block" data-act="closeModal">知道喇 👍</button>`);
     if (U.length) { S.settings.seenUpdate = U[0].id; save(); }
   }
@@ -731,11 +715,9 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     const start = left > 0
       ? `<button class="btn-primary btn-block ${t === 'nurse' ? 'pulse' : ''}" style="margin-top:10px" data-act="startToday" data-track="${t}">開始${T.name}字卡（${left} 張）→</button>`
       : `<div class="row" style="margin-top:10px"><div class="grow small"><b>今日${T.name}字卡完成 ✨</b></div><button class="btn-ghost" data-act="extraNew" data-track="${t}">+5 新字</button></div>`;
-    if (t === 'nurse') return `<div class="card" style="border-left:5px solid #12a39a">${head}
-      <p class="small muted" style="margin:4px 0 0">工作用：醫護字、病房句子、同同事溝通${S.settings.advFirst ? ' · 先學進階字' : ''}</p>${start}
+    if (t === 'nurse') return `<div class="card" style="border-left:5px solid #12a39a">${head}${start}
       <div class="row" style="margin-top:8px"><button class="chip" data-act="quiz" data-kind="learned" data-track="nurse">✏️ 測驗</button><button class="chip" data-act="quiz" data-kind="weak" data-track="nurse">🎯 弱項</button><button class="chip" data-act="quiz" data-kind="spell" data-track="nurse">⌨️ 串字</button><a class="chip btn" href="#library">📚 字庫</a></div></div>`;
-    return `<div class="card" style="border-left:5px solid #3b82f6">${head}
-      <p class="small muted" style="margin:4px 0 0">考試用：IELTS 字彙、口語、寫作、閱讀、聽力</p>${start}
+    return `<div class="card" style="border-left:5px solid #3b82f6">${head}${start}
       ${examCard(true)}</div>`;
   }
   V.home = () => {
@@ -745,13 +727,11 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     const h = new Date().getHours();
     const greet = h < 12 ? '早晨' : h < 18 ? '午安' : '晚安';
     const wd = ['日', '一', '二', '三', '四', '五', '六'][new Date().getDay()];
-    const q = QUOTES[hashStr(today() + 'q') % QUOTES.length];
     const pool = ALL.filter(c => ['medical', 'ielts'].includes(deckOf(c).cat) && !deckOf(c).say && !deckOf(c).abbr && !deckOf(c).roots);
     const unseen = pool.filter(c => !S.cards[c.id]);
     const src = unseen.length ? unseen : pool;
     const w = src[hashStr(today()) % src.length];
     const st = streak();
-    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
     return `
     <div class="hello">
       <div><div class="muted small">${new Date().getMonth() + 1}月${new Date().getDate()}日 星期${wd}</div>
@@ -759,8 +739,6 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
       <a href="#settings" class="pill" style="text-decoration:none;${syncReady() && !SY.lastError ? '' : 'background:rgba(239,90,90,.14);color:var(--bad)'}">${esc(syncReady() ? syncStatusText() : '☁️ 未連接同步：撳呢度設定')}</a></div>
       <div class="row" style="flex-wrap:nowrap;gap:8px"><button class="icon-btn" data-act="showUpdates" aria-label="更新通知" style="position:relative">🔔${hasNewUpdate() ? '<span style="position:absolute;top:4px;right:4px;width:10px;height:10px;border-radius:50%;background:var(--bad);box-shadow:0 0 0 2px var(--surface)"></span>' : ''}</button><a class="btn icon-btn" href="#help" aria-label="使用說明">❓</a><a class="btn icon-btn" href="#settings" aria-label="設定">⚙️</a></div>
     </div>
-    ${!S.settings.seenHelp ? `<div class="card tight" style="border-left:5px solid var(--accent)"><b>👋 第一次用？</b><p class="small">睇 1 分鐘使用說明，知道每日做咩、點樣用。</p>
-      <div class="row"><a class="btn btn-accent" href="#help">📖 睇使用說明</a><button class="btn-ghost" data-act="hideWelcome">唔使喇</button></div></div>` : ''}
     <div class="card hero">
       <div class="goal">
         ${ring(act, goal)}
@@ -789,14 +767,8 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     <div style="height:12px"></div>
     ${coachCard()}
     <a class="card tight deckrow" href="#feedback" style="color:inherit;text-decoration:none;--dc-soft:rgba(255,107,154,.16)"><div class="ic">💌</div>
-      <div class="grow"><b>意見箱</b><div class="small muted">有咩想改、唔明、錯字，寫低俾 Ben${Object.keys((NE.coach || {}).replies || {}).some(id => S.feedback.some(f => f.id === id)) ? ' · 有回覆 💬' : ''}</div></div><span>›</span></a>
-    <div class="card quote">
-      <div class="small muted">💌 今日鼓勵</div>
-      <p style="font-weight:700;margin-top:4px">${esc(q[0])}</p><p class="small muted">${esc(q[1])}</p>
-    </div>
-    ${!standalone && !S.settings.hideInstall ? `<div class="card tight small">
-      📲 <b>加到主畫面</b>：iPhone 用 Safari 撳「分享」→「加至主畫面」，用起嚟似 app，學習記錄亦唔會被清走。
-      <button class="btn-ghost" style="min-height:32px;padding:4px 10px;margin-top:6px" data-act="hideInstall">知道了</button></div>` : ''}`;
+      <div class="grow"><b>意見箱</b>${Object.keys((NE.coach || {}).replies || {}).some(id => S.feedback.some(f => f.id === id)) ? '<div class="small muted">有回覆 💬</div>' : ''}</div><span>›</span></a>
+`;
   };
 
   V.study = () => {
@@ -921,10 +893,9 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     const starred = ALL.filter(c => S.stars[c.id]);
     const nq = [['learned', '⚡', '已學快測'], ['weak', '🎯', '弱項特訓'], ['spell', '⌨️', '串字'], ['listen', '🎧', '聽力'], ['abbr', '🔤', '縮寫挑戰'], ['all', '🎲', '全部隨機']];
     return `<div class="row between"><h1>🩺 護理英文</h1><button class="btn-accent" data-act="addWord">＋ 加生字</button></div>
-      <p class="small muted">工作用嘅醫護英文。IELTS 字彙喺「🎓 IELTS → 字彙」。</p>
       <button class="btn-primary btn-block" data-act="startToday" data-track="nurse">開始護理字卡（溫習 ${dueCount(null, 'nurse')} · 新字 ${newIdsFor('nurse', newLeftToday('nurse')).length}）→</button>
       <a class="card tight deckrow" href="#cases" style="display:flex;color:inherit;text-decoration:none;margin-top:12px"><div class="ic">🩺</div><div class="grow"><b>臨床情境題</b><div class="small muted">${(NE.cases || []).length} 題 · 好似護士考試，訓練臨床判斷</div></div><span>›</span></a>
-      <h2>✏️ 測驗</h2><p class="small muted">答錯嘅字會自動加入溫習，仲要照住打 2 次。</p>
+      <h2>✏️ 測驗</h2>
       <div class="grid3" style="gap:8px">${nq.map(([k, ic, t]) => `<button class="btn-ghost" style="flex-direction:column;min-height:64px;font-size:13px" data-act="quiz" data-kind="${k}" data-track="nurse"><span style="font-size:20px">${ic}</span>${t}</button>`).join('')}</div>
       <h2>📚 字庫</h2>
       <input id="libSearch" type="search" placeholder="搵字（英文／中文）" value="${esc(V._libq || '')}" style="margin:10px 0">
@@ -985,7 +956,6 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
   function wordForm(c) {
     c = c || {};
     return `<h2 style="margin-top:0">${c.id ? '✏️ 修改生字' : '＋ 加生字'}</h2>
-      <p class="small muted">工作上聽到唔識嘅字或句子，記低佢，之後會自動安排溫習。</p>
       <label>英文 *</label><input id="f_en" value="${esc(c.en)}" placeholder="e.g. cannula" autocapitalize="none">
       <div class="row" style="margin-top:6px"><button class="chip" data-act="lookup">🔎 Cambridge 字典</button><button class="chip" data-act="translate">🌐 Google 翻譯</button></div>
       <label>中文意思</label><input id="f_zh" value="${esc(c.zh)}" placeholder="e.g. 靜脈導管">
@@ -1039,7 +1009,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     return shuffle(out);
   }
   V.quiz = () => `
-    <h1>✏️ 測驗</h1><p class="muted small">做錯嘅字會自動加入今日溫習，同埋放入「弱項」。</p>
+    <h1>✏️ 測驗</h1>
     <div class="grid2" style="margin-top:12px">
       ${[['learned', '⚡', '已學字快測', '10 題混合', 'c-blue'], ['weak', '🎯', '弱項特訓', '錯過／收藏嘅字', 'c-pink'], ['spell', '⌨️', '串字練習', '聽讀音打出個字', 'c-green'], ['listen', '🎧', '聽力', '聽英文揀意思', 'c-purple'], ['abbr', '🔤', '縮寫挑戰', 'BP、PRN、NBM…', 'c-orange'], ['all', '🎲', '全部隨機', '包括未學嘅字', 'c-teal']]
       .map(([k, ic, t, s, cl]) => `<button class="card" style="flex-direction:column;align-items:flex-start;margin:0;text-align:left" data-act="quiz" data-kind="${k}"><span class="action" style="padding:0;border:0;box-shadow:none;background:none"><span class="ico ${cl}">${ic}</span></span><b>${t}</b><span class="small muted">${s}</span></button>`).join('')}
@@ -1117,14 +1087,13 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     let body = '';
     if (IEL.tab === 'speak') body = speakHtml();
     else if (IEL.tab === 'write') body = writeListHtml();
-    else if (IEL.tab === 'read') body = `<p class="small muted">每篇約 15 分鐘。交卷後有答案解釋同估分。</p>` + NE.reading.map(r => `<a class="card tight" href="#read/${r.id}" style="display:block;color:inherit;text-decoration:none">
+    else if (IEL.tab === 'read') body = NE.reading.map(r => `<a class="card tight" href="#read/${r.id}" style="display:block;color:inherit;text-decoration:none">
         <div class="row between"><b>${esc(r.title)}</b>${lastScore('read', r.id) ? `<span class="pill master">上次 ${lastScore('read', r.id)}</span>` : '<span class="pill new">未做</span>'}</div>
         <div class="small muted">${esc(r.zh)} · ${r.qs.length} 題 · T/F/NG、填字、選擇</div></a>`).join('');
     else if (IEL.tab === 'listen') body = `<button class="card tight deckrow" data-act="goDict" style="width:100%;text-align:left;--dc-soft:rgba(139,92,246,.16)"><div class="ic">✍️</div><div class="grow"><b>聽寫練習</b><div class="small muted">聽一句打一句，練聽力同串字（無限句）</div></div><span>›</span></button>
       <h2>對話填表</h2>` + NE.listening.map(r => `<a class="card tight" href="#listen/${r.id}" style="display:block;color:inherit;text-decoration:none">
         <div class="row between"><b>${esc(r.title)}</b>${lastScore('listen', r.id) ? `<span class="pill master">上次 ${lastScore('listen', r.id)}</span>` : '<span class="pill new">未做</span>'}</div>
-        <div class="small muted">${esc(r.zh)} · ${esc(r.part)} · ${r.qs.length} 題</div></a>`).join('') +
-      `<p class="small muted">讀音用手機內置聲音，同真考試錄音唔同。建議每星期都做一份官方練習卷（見「貼士」）。</p>`;
+        <div class="small muted">${esc(r.zh)} · ${esc(r.part)} · ${r.qs.length} 題</div></a>`).join('');
     else if (IEL.tab === 'gram') body = gramHtml();
     else if (IEL.tab === 'para') body = paraHtml();
     else if (IEL.tab === 'vocab') body = `<div class="card tight"><b>🎓 IELTS 字卡同測驗</b>
@@ -1140,7 +1109,6 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
       <h2>🔗 連接詞速查</h2>${linkingHtml()}`;
     else body = tipsHtml();
     return `<h1>🎓 <span class="grad-text">IELTS</span> 溫習</h1>
-      <p class="muted small">題目為原創練習題（健康／工作話題為主），唔係官方真題。</p>
       <a class="card tight deckrow" href="#reports" style="display:flex;color:inherit;text-decoration:none"><div class="ic">📈</div><div class="grow"><b>我嘅 AI 報告</b><div class="small muted">${S.reports.length} 份 · 睇分數走勢、逐項評分、匯出 PDF</div></div><span>›</span></a>
       <a class="card tight deckrow" href="#mock" style="display:flex;color:inherit;text-decoration:none"><div class="ic">🎙️</div><div class="grow"><b>AI 模擬口試（Part 1→2→3）</b><div class="small muted">AI 考官讀題、聽你答、追問，最後出完整報告</div></div><span>›</span></a>
       <div class="tabs" style="margin:12px 0">${tabs.map(([k, t]) => `<button class="chip ${IEL.tab === k ? 'on' : ''}" data-act="ieltsTab" data-tab="${k}"><span class="ti">${t.split(' ')[0]}</span>${t.split(' ')[1]}</button>`).join('')}</div>
@@ -1167,7 +1135,6 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
           : `<div class="grid2" style="margin-top:8px;${P === 2 ? '' : 'grid-template-columns:1fr'}">
               ${P === 2 ? `<button class="btn-ghost" data-act="p2go">⏱️ 準備 1 分鐘</button>` : ''}
               <button class="btn-primary btn-big" data-act="spkGo" data-s="${secs}">🎙️ ${IEL.audio ? '再答一次' : '開始作答'}</button></div>`}
-        <p class="small muted" style="margin-top:8px">撳一下就開始錄音同計時；講完撳「講完」或者時間到，AI 會聽你錄音：寫低你講咗咩、估 Band、指出文法同發音問題。</p>
         ${IEL.audio ? `<audio controls src="${IEL.audio.url}" style="width:100%;margin-top:6px"></audio>
           <button class="chip" data-act="spkRetryAI" style="margin-top:6px">🤖 再叫 AI 評一次</button>` : ''}
         <div id="aiSpkBox" style="text-align:left"></div>
@@ -1365,8 +1332,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
       <p class="small muted">${esc(P.zh)} · ${esc(P.part)} · 開始前先睇晒題目，估下要填咩（名？數字？時間？）</p>
       ${LS.done ? `<div class="card hero center"><div class="score">${LS.score}/${n}</div><p>按比例估算約 <b>Band ${bandFor('listening', LS.score, n)}</b>（只供參考）</p></div>` : ''}
       <div class="card center">
-        <div class="grid2"><button class="btn-primary btn-big" data-act="lsPlay" id="lsPlayBtn">▶️ 播放</button><button class="btn-ghost btn-big" data-act="lsStop">⏹️ 停</button></div>
-        <p class="small muted" style="margin-top:8px">真考試只播一次。第一次試下只聽一次先答，之後先重聽。</p></div>
+        <div class="grid2"><button class="btn-primary btn-big" data-act="lsPlay" id="lsPlayBtn">▶️ 播放</button><button class="btn-ghost btn-big" data-act="lsStop">⏹️ 停</button></div></div>
       <div class="card"><h3>填寫答案（ONE WORD AND/OR A NUMBER）</h3>
       ${P.qs.map((q, i) => { const r = LS.done && LS.res[i]; return `<label style="color:var(--text)">${r ? (r.ok ? '✅' : '❌') : (i + 1) + '.'} ${esc(q.q)}</label>
         <input data-lq="${i}" value="${esc(LS.ans[i] || '')}" autocapitalize="none" autocomplete="off" ${LS.done ? 'disabled' : ''}>
@@ -1436,7 +1402,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
         <button class="btn-primary btn-block" style="margin-top:10px" data-act="dcNext">下一句 →</button>`;
     }
     return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#ielts" data-act="goIelts" data-tab="listen">‹</a><h1 class="grow">✍️ 聽寫</h1><span class="pill">今次 ${DC.count} 句</span></div>
-      <p class="small muted">聽一句，打晒出嚟。練聽力同串字（IELTS 聽力串錯字冇分）。紅色 = 漏咗或者串錯。</p>
+      <p class="small muted">紅色 = 漏咗或者串錯</p>
       <div class="card center"><div class="grid2"><button class="btn-primary btn-big" data-act="dcPlay">🔊 播放</button><button class="btn-ghost btn-big" data-act="dcSlow">🐢 慢速</button></div></div>
       <textarea id="dcIn" placeholder="聽到乜就打乜…" autocapitalize="sentences" style="min-height:100px" ${DC.done ? 'disabled' : ''}>${esc(DC.typed || '')}</textarea>
       ${DC.done ? res : `<button class="btn-primary btn-block" style="margin-top:10px" data-act="dcCheck">對答案</button>`}`;
@@ -1446,7 +1412,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
   let GQ = null;
   function gramHtml() {
     const stats = {}; S.events.filter(e => e.k === 'gram').forEach(e => { const x = stats[e.cat] || (stats[e.cat] = { n: 0, ok: 0 }); x.n++; if (e.ok) x.ok++; });
-    if (!GQ) return `<p class="small muted">香港考生最常錯嘅文法：冠詞、時態、單複數、不可數名詞。每題都有中文解釋。</p>
+    if (!GQ) return `
       <button class="btn-primary btn-big btn-block" data-act="gramStart" data-cat="">🧩 隨機 10 題</button>
       <h2>揀類別</h2><div class="card">${Object.entries(NE.grammarCats).map(([k, t]) => { const s = stats[k];
         return `<div class="row between" style="margin:6px 0"><button class="chip" data-act="gramStart" data-cat="${k}">${esc(t)}</button><span class="small ${s ? '' : 'muted'}">${s ? Math.round(s.ok / s.n * 100) + '%（' + s.n + ' 題）' : '未做'}</span></div>`; }).join('')}</div>`;
@@ -1470,7 +1436,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
   function paraHtml() {
     if (PP.i == null) PP.i = hashStr(today() + 'p') % NE.paraphrase.length;
     const p = NE.paraphrase[PP.i];
-    return `<p class="small muted">用唔同嘅字同句式講同一個意思。寫作開首段要改寫題目，閱讀答案亦成日係原文嘅同義改寫。</p>
+    return `
       <div class="card" style="border-top:6px solid #22b07d"><div class="small muted">改寫呢句：</div><div class="cue" style="margin-top:4px">${esc(p.src)}</div></div>
       <div class="row" style="flex-wrap:nowrap;align-items:flex-start"><textarea id="paraIn" placeholder="用你自己嘅方法改寫…（可以撳 🎤 講）" style="min-height:90px">${esc(PP.typed || '')}</textarea>
       <button class="speak" data-act="dictate" data-target="paraIn" data-lang="en">🎤</button></div>
@@ -1883,7 +1849,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
   V.coach = () => {
     const W = S.weekly.slice().reverse();
     return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#stats">‹</a><h1 class="grow">📊 學習報告</h1></div>
-      <div class="card"><b>🤖 AI 簡短週報</b><p class="small muted">App 入面嘅 AI 會睇你最近 7 日嘅紀錄：強項、弱項、下星期點做。大約 10–30 秒。</p>
+      <div class="card"><b>🤖 AI 簡短週報</b>
         <button class="btn-primary btn-block" data-act="weeklyGo">生成今個星期嘅報告</button><div id="aiWeekBox"></div></div>
       ${W.length ? `<h2>之前嘅週報</h2>${W.map(x => `<details class="subj"><summary><b>${repDate(x.t)}</b> <span class="small muted">${esc((x.res.summary || '').slice(0, 40))}…</span></summary>${aiResultHtml(x.res, '')}</details>`).join('')}` : ''}
       <div class="card" style="margin-top:14px"><b>🧠 Claude 詳細報告</b><p class="small muted">Ben 叫 Claude 詳細分析你嘅紀錄之後，報告會出現喺度（儲存喺你嘅私人 GitHub）。</p><div id="claudeList">${syncReady() ? '載入中…' : '要先喺「設定 → 同步」連接 GitHub 先睇到。'}</div></div>`;
@@ -1923,7 +1889,6 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     const R = S.reports.slice().reverse();
     const grp = [['✍️ 寫作', S.reports.filter(x => x.kind === 'essay')], ['🎤 口語', S.reports.filter(x => x.kind !== 'essay')]];
     return `<div class="row" style="flex-wrap:nowrap"><a class="btn icon-btn" href="#ielts">‹</a><h1 class="grow">📈 我嘅 AI 報告</h1></div>
-      <p class="small muted">每次寫作／口語 AI 評分都會自動儲存喺度${syncReady() ? '，同埋同步去 GitHub 備份' : ''}。撳入去可以睇完整報告同匯出 PDF。</p>
       ${grp.map(([t, xs]) => xs.length ? `<div class="card"><b>${t}：分數走勢（${xs.length} 次）</b>${trendSvg(xs.map(x => +x.res.band).filter(b => !isNaN(b)))}${critCompare(xs)}</div>` : '').join('')}
       ${R.length ? R.map(x => `<a class="card tight" href="#report/${x.id}" style="display:block;color:inherit;text-decoration:none"><div class="row between"><b>${esc(repTitle(x))}</b><b style="color:${bandColor(+x.res.band)}">${x.res.band != null ? 'Band ' + esc(x.res.band) : ''}</b></div>
         <div class="small muted">${repDate(x.t)} · ${esc(x.q.slice(0, 80))}${x.q.length > 80 ? '…' : ''}</div></a>`).join('') : '<div class="card center muted">未有報告。去「🎓 IELTS → 寫作／口語」做一題，撳 AI 批改就會有。</div>'}`;
@@ -2004,7 +1969,6 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       <div class="card hero center"><div class="small">${days == null ? '未設定考試日期' : days > 0 ? `IELTS 倒數 <b>${days}</b> 日` : days === 0 ? '今日考試！加油 💪' : '考完喇 🎉'} · 目標 Band ${esc(s.target)}</div>
         <div class="progress" style="margin-top:10px"><div style="width:${all ? done / all * 100 : 0}%"></div></div>
         <div class="small" style="margin-top:6px">一次性任務完成 ${done}/${all}${days == null ? ' · <a href="#settings" style="color:inherit"><b>設定考試日期 →</b></a>' : ''}</div></div>
-      <p class="small muted">大約 10–12 星期：App 每日練 ＋ Cambridge 真題。做完撳一下就剔，再撳取消。</p>
       ${NE.roadmap.map(phase).join('')}
       <div class="card"><h3>📊 模擬考分數</h3><p class="small muted">每次做完 Cambridge 真題記低，睇下有冇進步（填 band，例如 6 或 6.5；冇做嗰項留空）。</p>
         <div class="grid2" style="grid-template-columns:repeat(4,1fr);gap:6px">${['L 聽力', 'R 閱讀', 'W 寫作', 'S 口語'].map(x => `<input id="mk${x[0]}" inputmode="decimal" placeholder="${x}" style="min-width:0">`).join('')}</div>
@@ -2089,7 +2053,6 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
   function feedbackForm(ctx, inline) {
     const c = ctx && BY[ctx];
     return `${inline ? '' : '<h2 style="margin-top:0">💌 寫意見俾 Ben</h2>'}
-      <p class="small muted">有咩唔明、錯字、太難太易、想加咩，都可以寫。Ben 會叫 Claude 睇完再改 app。</p>
       ${c ? `<div class="ex small">關於：<b>${esc(fill(c.en))}</b> — ${esc(fill(c.zh))}</div>` : ''}
       <div class="row" style="margin:10px 0">${FB_CATS.map(([k, t], i) => `<button class="chip ${i === (c ? 0 : 3) ? 'on' : ''}" data-act="fbCat" data-cat="${k}">${t}</button>`).join('')}</div>
       <textarea id="fbText" placeholder="例如：呢個字嘅中文唔啱／想多啲聽力練習／Part 2 題目太難…" style="min-height:120px"></textarea>
@@ -2156,7 +2119,7 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     chatFab(); const fab = $('#aiFab'); if (fab) fab.style.display = !['study', 'quizrun', 'mock', 'write'].includes(route) ? '' : 'none';
     if (route === 'coach') loadClaudeList();
     if (route === 'creport') { const a = (location.hash.split('/')[1] || ''); loadClaudeReport(decodeURIComponent(a)); }
-    if (route === 'home' && !updPopped && S.settings.seenHelp && hasNewUpdate()) { updPopped = true; setTimeout(() => { if (location.hash === '' || location.hash === '#home') { showUpdates(); render(); } }, 700); }
+    if (route === 'home' && !updPopped && hasNewUpdate()) { updPopped = true; setTimeout(() => { if (location.hash === '' || location.hash === '#home') { showUpdates(); render(); } }, 700); }
     if (route !== lastRoute) {
       window.scrollTo(0, 0);
       if (['ielts', 'write', 'read'].includes(lastRoute) && !(lastRoute === 'ielts' && route === 'ielts')) { stopTimer(); stopRecording(); }
@@ -2240,7 +2203,6 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
     grade: el => grade(Number(el.dataset.g)),
     exitStudy: () => { SES = null; location.hash = '#home'; },
     star: el => { const id = el.dataset.id; if (S.stars[id]) delete S.stars[id]; else S.stars[id] = 1; save(); el.textContent = S.stars[id] ? '⭐ 已收藏' : '☆ 收藏'; el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 400); },
-    hideInstall: () => { S.settings.hideInstall = true; save(); render(); },
     detail: el => openModal(detailHtml(BY[el.dataset.id])),
     closeModal: () => closeModal(),
     openSubjAlso: el => { const g = el.dataset.grp; const t = ((NE.subjects || []).concat(NE.ieltsTopics || []).find(s => s[0] === g) || [, ''])[1];
@@ -2344,7 +2306,6 @@ Return JSON: {"score": 0-10, "ok": true/false, "summary": "Chinese", "correction
       logToday().ex += 2; save(); checkGoal();
       PP = { i: (PP.i + 1) % NE.paraphrase.length, shown: false }; render(); toast(el.dataset.v === '1' ? '👍 好！下一句' : '💪 繼續練');
     },
-    hideWelcome: () => { S.settings.seenHelp = true; save(); render(); },
     openFb: el => openModal(feedbackForm(el.dataset.ctx || '')),
     fbCat: el => { el.parentElement.querySelectorAll('.chip').forEach(b => b.classList.toggle('on', b === el)); },
     fbSend: el => {

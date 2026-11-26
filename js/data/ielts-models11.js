@@ -1,0 +1,33 @@
+// IELTS 口語參考答案（十一）：Part 1 同 Part 3 最後一批（原創，只供學習結構同用字）
+(function () {
+  const M = NE.ielts.models;
+  const add = (q, a) => { if (!M[q]) M[q] = a; };
+  // Part 1
+  add('Who are you closest to in your family?', `I'm closest to my mum. She's very understanding, and she always waits up with a hot meal when I come home late from a shift. I can talk to her about anything, including stressful days at work.`);
+  add('How often do you see your friends?', `Not as often as I'd like, because we all work different hours. I usually meet my close friends about twice a month, often for brunch or a hike on our days off.`);
+  add('Do you prefer to have a few close friends or many friends?', `I prefer a few close friends. I think quality matters more than quantity, and with my busy schedule, it's easier to keep in touch with a small group of people I really trust.`);
+  add('Where did you go on your last holiday?', `My last holiday was a five-day trip to Taiwan with two friends. We visited night markets in Taipei, took a train to the mountains and ate a lot of delicious street food. It was really relaxing.`);
+  add('Do you prefer travelling alone or with others?', `I prefer travelling with friends or family, because it's more fun to share experiences and it feels safer. But I'd like to try travelling alone one day, just to challenge myself.`);
+  add('Is there a place you would like to visit in the future?', `I'd love to visit Australia, partly for the beautiful nature and partly because I'm interested in how nurses work there. It would be amazing to visit a children's hospital and see their practice.`);
+  add('Do you think you have a healthy lifestyle?', `Mostly, yes, although shift work makes it difficult. I try to eat balanced meals and exercise regularly, but my sleep isn't always great after night shifts. That's the area I'm working on.`);
+  add('How do you keep fit?', `I walk a lot, both at work and in my free time, and I go hiking a couple of times a month. I also do short stretching or yoga sessions at home, which helps with back pain from lifting.`);
+  add('What do you do when you feel tired?', `If I can, I take a short nap — about twenty minutes is ideal. Otherwise, I drink some water, get some fresh air or have a quick snack. Coffee helps too, but I avoid it late in the day.`);
+  add('Do you like wearing a watch?', `Yes, I wear one every day for work. As a nurse, I need a watch with a second hand to count pulse and breathing rates. Because of infection control, I wear a fob watch pinned to my uniform rather than on my wrist.`);
+  add('Do you often give gifts to people?', `Mainly on special occasions, like birthdays and Chinese New Year. I prefer giving practical or personal gifts, like home-made cookies or a book I think the person will enjoy.`);
+  add('Do you like going to parties?', `Small gatherings, yes, but I'm not a big fan of large, noisy parties. After a long week at work, I'd rather have dinner with a few friends where we can actually talk.`);
+  add('Do you remember your first day at school?', `I remember a little. I was about three years old, starting kindergarten, and I cried when my mum left. But the teacher gave me some crayons, and by the end of the day I'd made a new friend.`);
+  add('Do you prefer to write by hand or type?', `For most things I type, because it's faster and easier to edit. But when I'm studying, I find writing notes by hand helps me remember information better.`);
+  add('Do you like learning languages?', `Yes, I do, although it can be challenging. I enjoy the feeling of being able to communicate with more people. Learning English is especially meaningful for me because I use it at work and want to study for a degree.`);
+  add('What do you usually do at weekends?', `It depends on my roster, because I often work weekends. When I'm off, I like to sleep in, have dim sum with my family and maybe go hiking or meet friends in the afternoon.`);
+  add('Do you like art?', `I do, although I'm not an expert. I enjoy visiting exhibitions occasionally, especially photography and modern art. When I was younger, I used to love drawing.`);
+  add('Do you like animals?', `Yes, I love animals, especially dogs. They're so loyal and friendly. I enjoy watching videos of animals online when I need to relax after work.`);
+  add('Have you ever had a pet?', `Yes, when I was in primary school, we had a goldfish and later a hamster. I haven't had a pet since then, because our flat is small and my working hours are irregular, but I'd love to have a dog in the future.`);
+
+  // Part 3
+  add('Why is English so important internationally?', `English has become the main language of international business, science and technology. Most academic research, including medical journals, is published in English, so professionals need it to keep up to date. It's also widely used in travel and online communication, so it connects people from different countries.`);
+  add('Is it better to learn a language at a young age?', `There are advantages to starting young, especially for pronunciation, because children pick up sounds naturally. However, adults can also learn successfully, as they're often more motivated and can use effective study strategies. I think regular practice matters more than age.`);
+  add('Will machine translation replace language learning?', `I don't think so. Translation apps are useful for simple things, like reading a menu, but they can still make mistakes, especially with medical or emotional conversations. Also, speaking someone's language helps build trust and understand their culture, which a machine can't do.`);
+  add('Should healthcare be completely free?', `I believe basic healthcare should be free or very affordable, so that nobody avoids treatment because of cost. However, completely free healthcare can lead to overuse and long waiting times. A system like Hong Kong's, where public care is heavily subsidised but there's also a private sector, is a reasonable balance.`);
+  add('How might hospitals change in the next 20 years?', `I think technology will play a much bigger role. We'll probably see more remote monitoring, so some patients can be cared for at home, and AI may help with diagnosis and paperwork. However, I believe nurses will still be essential, because patients will always need human care and comfort.`);
+  add('Should doctors and nurses be allowed to strike?', `I think they should have the right to strike, but only as a last resort and with emergency services protected. Healthcare workers have a duty to patients, but if working conditions are unsafe, a strike may be the only way to bring about change that ultimately benefits patients too.`);
+})();

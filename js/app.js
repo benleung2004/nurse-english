@@ -1010,8 +1010,10 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
   }
   function makeChoices(c, type) {
     const key = type === 'mcEn' ? 'en' : 'zh';
-    let pool = ALL.filter(x => x.d === c.d && x.id !== c.id);
-    if (pool.length < 3) pool = ALL.filter(x => deckOf(x).cat === deckOf(c).cat && !!deckOf(x).say === !!deckOf(c).say && x.id !== c.id);
+    // 題目嗰邊（英文或中文）同答案一樣嘅字唔可以做錯誤選項，例如 NBM / NPO 都係「禁食」
+    const other = key === 'en' ? 'zh' : 'en', same = x => String(x[other]).trim().toLowerCase() === String(c[other]).trim().toLowerCase();
+    let pool = ALL.filter(x => x.d === c.d && x.id !== c.id && !same(x));
+    if (pool.length < 3) pool = ALL.filter(x => deckOf(x).cat === deckOf(c).cat && !!deckOf(x).say === !!deckOf(c).say && x.id !== c.id && !same(x));
     const seen = new Set([c[key]]); const out = [c.id];
     // 優先揀長度相近嘅選項（字對字、句對句），避免靠長度估答案
     const len = x => String(x[key] || '').length, t = len(c);

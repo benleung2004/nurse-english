@@ -3,7 +3,7 @@ NE.updates = [
   {
     id: '2026-11-26-topics6', title: '📚 IELTS 話題字彙擴充（金錢、時裝、娛樂、性格、歷史、交通）',
     items: [
-      '六個字最少嘅 IELTS 話題各加一個新字庫，共 58 張新卡',
+      '六個字最少嘅 IELTS 話題各加一個新字庫，共 58 張新卡；另外大自然、旅遊、藝術、語言、飲食、家庭再加 29 張進階字',
       '例如：tighten one\'s belt、cashless society、beauty standards、plot twist、thought-provoking、calm under pressure、burnt out、revitalise、heritage site、electric vehicle、pedestrian zone',
     ]
   },

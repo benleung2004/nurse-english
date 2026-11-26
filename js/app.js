@@ -1381,11 +1381,12 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     speechSynthesis.cancel(); loadVoices();
     const acc = S.settings.accent;
     let pool = voices.filter(v => v.lang.replace('_', '-') === acc); if (!pool.length) pool = voices.filter(v => v.lang.startsWith('en'));
-    const vA = pool[0], vB = pool.find(v => v !== vA) || vA;
+    const vA = pool[0], vB = pool.find(v => v !== vA) || vA, vC = pool.find(v => v !== vA && v !== vB) || vB;
     lines.forEach(([sp, text], k) => {
       const u = new SpeechSynthesisUtterance(text); u.lang = acc; u.rate = S.settings.rate;
-      const v = sp === 'A' ? vA : vB; if (v) u.voice = v;
+      const v = sp === 'A' ? vA : sp === 'C' ? vC : vB; if (v) u.voice = v;
       if (sp === 'B' && vB === vA) u.pitch = 1.35;
+      if (sp === 'C' && (vC === vA || vC === vB)) u.pitch = 0.8;
       if (k === lines.length - 1) u.onend = u.onerror = () => btn && btn.classList.remove('playing');
       speechSynthesis.speak(u);
     });

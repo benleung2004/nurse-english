@@ -72,3 +72,4 @@
 - 10:32 加入 ielts-models11.js：Part 1／3 參考答案 133→158 個，全部口語題目都有參考答案。
 - 10:33 加入 ielts-models12.js：範文 35→41 篇（5 篇 Task 2、1 篇 Task 1）。
 - 10:34 加入 ielts-models13.js：範文 41→48 篇（新寫 5 篇，相近題目共用 2 篇）。
+- 10:35 加入 ielts-models14.js：範文 48→54 篇（6 篇 Task 2）。

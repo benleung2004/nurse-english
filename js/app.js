@@ -642,7 +642,7 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     const all = (NE.cases || []).filter(c => !grp || c.grp === grp); const st = caseStats();
     let pool = mode === 'wrong' ? all.filter(c => st[c.id] === 0) : mode === 'new' ? all.filter(c => st[c.id] == null) : all;
     if (!pool.length) pool = all; if (!pool.length) return toast('呢個範圍未有題目');
-    CS = { qs: pool.slice().sort(() => Math.random() - .5).slice(0, 10).map(c => { const ix = [0, 1, 2, 3].sort(() => Math.random() - .5); return Object.assign({}, c, { choices: ix.map(k => c.choices[k]), ans: ix.indexOf(c.ans) }); }), i: 0, ok: 0, picked: null, zh: false, grp: grp || '' };
+    CS = { qs: pool.slice().sort(() => Math.random() - .5).slice(0, 10).map(c => { const ix = shuffle([0, 1, 2, 3]); return Object.assign({}, c, { choices: ix.map(k => c.choices[k]), ans: ix.indexOf(c.ans) }); }), i: 0, ok: 0, picked: null, zh: false, grp: grp || '' };
     location.hash = '#cases/run'; render();
   }
   function casesHome() {

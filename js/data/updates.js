@@ -1,6 +1,13 @@
 // 🔔 App 更新通知（最新放最頂）。每次改 app 都加一條，id 用日期；佢未睇過就會有紅點同自動彈出
 NE.updates = [
   {
+    id: '2026-11-26-prac23', title: '🧩 文法 229 題、🔁 改寫 95 句',
+    items: [
+      '新文法：the elderly、the number of / a number of、fewer vs less、a piece of advice、Neither of… has、Task 1 常用（rise from…to、increase by、is expected to）、Not until 倒裝',
+      '新改寫（Task 1 同 Task 2 開頭常用）：illustrates、a slight decrease、remained stable、peaked、opinions are divided、deteriorating、findings',
+    ]
+  },
+  {
     id: '2026-11-26-prac22', title: '🎧 聽力增至 58 段',
     items: [
       'Section 3：計劃文獻回顧（CINAHL、CASP）、導師同護理學生會面',

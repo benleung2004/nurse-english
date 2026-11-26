@@ -1010,7 +1010,10 @@ Reply with JSON only: {"reply": "your answer (may use - lists and **bold**)", "a
     let pool = ALL.filter(x => x.d === c.d && x.id !== c.id);
     if (pool.length < 3) pool = ALL.filter(x => deckOf(x).cat === deckOf(c).cat && !!deckOf(x).say === !!deckOf(c).say && x.id !== c.id);
     const seen = new Set([c[key]]); const out = [c.id];
-    for (const x of shuffle(pool)) { if (out.length >= 4) break; if (!seen.has(x[key])) { seen.add(x[key]); out.push(x.id); } }
+    // 優先揀長度相近嘅選項（字對字、句對句），避免靠長度估答案
+    const len = x => String(x[key] || '').length, t = len(c);
+    const near = shuffle(pool).sort((a, b) => Math.abs(len(a) - t) - Math.abs(len(b) - t));
+    for (const x of shuffle(near.slice(0, 8)).concat(near.slice(8))) { if (out.length >= 4) break; if (!seen.has(x[key])) { seen.add(x[key]); out.push(x.id); } }
     return shuffle(out);
   }
   V.quiz = () => `
